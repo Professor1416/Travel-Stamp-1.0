@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,13 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Terrain
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,10 +53,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.SectionHeader
+import com.example.ui.components.Spacing
+import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
@@ -114,7 +115,9 @@ fun CreateTripScreen(
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding(),
         topBar = {
             TopAppBar(
                 title = {
@@ -125,7 +128,10 @@ fun CreateTripScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.testTag("create_trip_back_button")
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -143,8 +149,8 @@ fun CreateTripScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(horizontal = Spacing.screenHorizontal),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xl)
         ) {
             // Screen Header Card
             item {
@@ -154,32 +160,35 @@ fun CreateTripScreen(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(18.dp),
+                            .padding(Spacing.cardPadding),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(46.dp)
                                 .clip(CircleShape)
-                                .background(ForestPine.copy(alpha = 0.12f)),
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = "🏔️", fontSize = 24.sp)
+                            Text(text = "🏔️", fontSize = 22.sp)
                         }
-                        Spacer(modifier = Modifier.width(14.dp))
+                        Spacer(modifier = Modifier.width(Spacing.md))
                         Column {
                             Text(
                                 text = "Create Trip Card",
-                                style = MaterialTheme.typography.headlineSmall,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontFamily = FontFamily.Serif,
+                                fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Start a fresh digital log for your trail",
+                                text = "Start a fresh digital log for your expedition",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -191,15 +200,14 @@ fun CreateTripScreen(
             // Quick Inspiration Chips
             item {
                 Column {
-                    Text(
-                        text = "POPULAR DESTINATIONS",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 1.sp,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                    SectionHeader(
+                        title = "Popular Destinations",
+                        emoji = "✨",
+                        modifier = Modifier.padding(bottom = Spacing.sm)
                     )
+
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(inspirationChips) { (name, dest) ->
@@ -216,9 +224,8 @@ fun CreateTripScreen(
                             ) {
                                 Text(
                                     text = "$name 📍",
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
@@ -227,7 +234,7 @@ fun CreateTripScreen(
                 }
             }
 
-            // Form Fields
+            // GROUP 1: JOURNEY DETAILS
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -235,14 +242,17 @@ fun CreateTripScreen(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.lg)
                     ) {
+                        SectionHeader(title = "Journey Details", emoji = "📍")
+
                         // Trip Name
                         Column {
                             Text(
@@ -251,43 +261,36 @@ fun CreateTripScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 letterSpacing = 0.5.sp
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(Spacing.xs))
                             OutlinedTextField(
                                 value = tripName,
                                 onValueChange = {
                                     tripName = it
                                     errorMessage = null
                                 },
-                                placeholder = { Text("e.g. Harihar Fort") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Terrain,
-                                        contentDescription = null,
-                                        tint = ForestPine
-                                    )
-                                },
-                                singleLine = true,
+                                placeholder = { Text("e.g. Harihar Fort Trek") },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("trip_name_input"),
+                                singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                                     unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                                ),
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+                                )
                             )
                         }
 
                         // Destination
                         Column {
                             Text(
-                                text = "DESTINATION *",
+                                text = "LOCATION / DESTINATION *",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 letterSpacing = 0.5.sp
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(Spacing.xs))
                             OutlinedTextField(
                                 value = destination,
                                 onValueChange = {
@@ -295,6 +298,9 @@ fun CreateTripScreen(
                                     errorMessage = null
                                 },
                                 placeholder = { Text("e.g. Nashik, Maharashtra") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("destination_input"),
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.LocationOn,
@@ -303,106 +309,115 @@ fun CreateTripScreen(
                                     )
                                 },
                                 singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("destination_input"),
                                 shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                                     unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                                ),
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+                                )
                             )
                         }
 
-                        // Date Picker Field
+                        // Date Selector
                         Column {
                             Text(
-                                text = "DATE",
+                                text = "DATE *",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 letterSpacing = 0.5.sp
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(Spacing.xs))
                             Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                color = MaterialTheme.colorScheme.surface,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
                                     .clickable { datePickerDialog.show() }
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .testTag("date_picker_button"),
-                                shape = RoundedCornerShape(12.dp),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outline
-                                )
+                                    .testTag("date_picker_button")
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
                                             imageVector = Icons.Default.CalendarMonth,
                                             contentDescription = null,
-                                            tint = ForestPine,
+                                            tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(20.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Spacer(modifier = Modifier.width(Spacing.md))
                                         Text(
                                             text = tripDate,
                                             style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Medium,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
-
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant
-                                    ) {
-                                        Text(
-                                            text = "Change",
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
+                                    Text(
+                                        text = "Change",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
+                    }
+                }
+            }
 
-                        // People Counter
+            // GROUP 2: EXPEDITION DETAILS
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.lg)
+                    ) {
+                        SectionHeader(title = "Expedition Details", emoji = "👥")
+
+                        // People count
                         Column {
                             Text(
-                                text = "NUMBER OF PEOPLE",
+                                text = "PEOPLE / COMPANIONS",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 letterSpacing = 0.5.sp
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(Spacing.xs))
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
                                         imageVector = Icons.Default.Group,
                                         contentDescription = null,
-                                        tint = ForestPine,
+                                        tint = Terracotta,
                                         modifier = Modifier.size(20.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.width(Spacing.sm))
                                     Text(
-                                        text = "$peopleCount ${if (peopleCount == 1) "Traveler" else "Companions"}",
+                                        text = "$peopleCount ${if (peopleCount == 1) "Solo Traveler" else "Explorers"}",
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -412,119 +427,123 @@ fun CreateTripScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     IconButton(
                                         onClick = { if (peopleCount > 1) peopleCount-- },
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.surface)
+                                        modifier = Modifier.size(36.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Remove,
                                             contentDescription = "Decrease",
-                                            tint = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(18.dp)
+                                            tint = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
 
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(Spacing.xs))
 
                                     IconButton(
-                                        onClick = { peopleCount++ },
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary)
+                                        onClick = { if (peopleCount < 50) peopleCount++ },
+                                        modifier = Modifier.size(36.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Add,
                                             contentDescription = "Increase",
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(18.dp)
+                                            tint = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
                                 }
                             }
                         }
 
-                        // Description
+                        // Description (Optional)
                         Column {
-                            Text(
-                                text = "SHORT DESCRIPTION (OPTIONAL)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                letterSpacing = 0.5.sp
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "SHORT DESCRIPTION",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = "(Optional)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(Spacing.xs))
                             OutlinedTextField(
                                 value = description,
                                 onValueChange = { description = it },
-                                placeholder = { Text("e.g. Sunday monsoon trek with friends.") },
-                                minLines = 2,
-                                maxLines = 4,
+                                placeholder = { Text("e.g. Monsoon trek with childhood friends through the Sahyadri rock-cut stairs.") },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("description_input"),
+                                minLines = 2,
+                                maxLines = 4,
                                 shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                                     unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                                ),
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
-                            )
-                        }
-
-                        if (errorMessage != null) {
-                            Text(
-                                text = errorMessage ?: "",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
+                                )
                             )
                         }
                     }
                 }
             }
 
-            // Submit Button
+            // Error Banner if validation fails
+            if (errorMessage != null) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Text(
+                            text = errorMessage!!,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)
+                        )
+                    }
+                }
+            }
+
+            // Primary Action: CREATE JOURNEY Button
             item {
-                Button(
+                TravelPrimaryButton(
+                    text = "CREATE JOURNEY",
                     onClick = {
-                        if (tripName.isBlank()) {
-                            errorMessage = "Please enter a trip name"
-                            return@Button
+                        val trimmedName = tripName.trim()
+                        val trimmedDest = destination.trim()
+
+                        if (trimmedName.isBlank()) {
+                            errorMessage = "Please provide a name for this journey."
+                            return@TravelPrimaryButton
                         }
-                        if (destination.isBlank()) {
-                            errorMessage = "Please enter a destination"
-                            return@Button
+                        if (trimmedDest.isBlank()) {
+                            errorMessage = "Please provide a location/destination."
+                            return@TravelPrimaryButton
                         }
 
                         viewModel.createTrip(
-                            name = tripName,
-                            destination = destination,
+                            name = trimmedName,
+                            destination = trimmedDest,
                             date = tripDate,
                             peopleCount = peopleCount,
-                            description = description,
-                            onCreated = onTripCreated
+                            description = description.trim(),
+                            onCreated = { newId ->
+                                onTripCreated(newId)
+                            }
                         )
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .testTag("submit_create_trip_button"),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
-                ) {
-                    Text(
-                        text = "CREATE TRIP",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontSize = 15.sp,
-                        letterSpacing = 1.sp
-                    )
-                }
+                    testTag = "submit_create_trip_button"
+                )
+            }
 
-                Spacer(modifier = Modifier.height(24.dp))
+            item {
+                Spacer(modifier = Modifier.height(Spacing.lg))
             }
         }
     }

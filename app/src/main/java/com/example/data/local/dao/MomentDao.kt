@@ -15,6 +15,9 @@ interface MomentDao {
     @Query("SELECT * FROM moments WHERE tripId = :tripId ORDER BY timestamp ASC")
     suspend fun getMomentsForTripSync(tripId: Long): List<MomentEntity>
 
+    @Query("SELECT * FROM moments ORDER BY timestamp ASC")
+    suspend fun getAllMomentsListSync(): List<MomentEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMoment(moment: MomentEntity): Long
 

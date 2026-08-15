@@ -2,7 +2,6 @@ package com.example.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,14 +31,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Trip
 import com.example.data.model.TripStatus
-import com.example.ui.theme.ForestPine
-import com.example.ui.theme.SandSurfaceVariantLight
 import com.example.ui.theme.Terracotta
 
 @Composable
@@ -50,11 +49,13 @@ fun TripCardTicket(
 ) {
     Card(
         modifier = modifier
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .testTag("trip_card_ticket_${trip.id}"),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         onClick = { onClick?.invoke() },
         enabled = onClick != null
@@ -62,7 +63,7 @@ fun TripCardTicket(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(Spacing.cardPadding)
         ) {
             // Top Row: Status badge & Trip ID
             Row(
@@ -70,27 +71,7 @@ fun TripCardTicket(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (trip.status == TripStatus.COMPLETED) {
-                        Terracotta.copy(alpha = 0.15f)
-                    } else {
-                        ForestPine.copy(alpha = 0.15f)
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (trip.status == TripStatus.COMPLETED) "🏅 STAMP EARNED" else "🧭 ACTIVE EXPEDITION",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (trip.status == TripStatus.COMPLETED) Terracotta else ForestPine,
-                            letterSpacing = 0.5.sp
-                        )
-                    }
-                }
+                StatusBadge(status = trip.status)
 
                 Text(
                     text = "NO. #${String.format("%04d", trip.id)}",
@@ -101,16 +82,18 @@ fun TripCardTicket(
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
 
             // Trip Name Header
             Text(
                 text = trip.name,
-                style = MaterialTheme.typography.headlineLarge,
+                style = MaterialTheme.typography.titleLarge,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(Spacing.xxs))
 
             // Destination
             Row(
@@ -120,24 +103,25 @@ fun TripCardTicket(
                     imageVector = Icons.Default.LocationOn,
                     contentDescription = null,
                     tint = Terracotta,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(Spacing.xs))
                 Text(
                     text = trip.destination,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
 
             // Perforated Ticket Divider
             PerforatedDivider(
                 color = MaterialTheme.colorScheme.outlineVariant
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
 
             // Details row: Date & Companions
             Row(
@@ -153,7 +137,7 @@ fun TripCardTicket(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -163,18 +147,18 @@ fun TripCardTicket(
                             modifier = Modifier.size(16.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(Spacing.sm))
                     Column {
                         Text(
                             text = "DATE",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 0.5.sp
+                            letterSpacing = 0.6.sp
                         )
                         Text(
                             text = trip.date,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -189,28 +173,28 @@ fun TripCardTicket(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                            .background(Terracotta.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Group,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary,
+                            tint = Terracotta,
                             modifier = Modifier.size(16.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(Spacing.sm))
                     Column {
                         Text(
                             text = "PEOPLE",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 0.5.sp
+                            letterSpacing = 0.6.sp
                         )
                         Text(
-                            text = "${trip.peopleCount} ${if (trip.peopleCount == 1) "Person" else "Friends"}",
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = "${trip.peopleCount} ${if (trip.peopleCount == 1) "Solo" else "Explorers"}",
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -219,7 +203,7 @@ fun TripCardTicket(
             }
 
             if (trip.description.isNotBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(Spacing.md))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
@@ -227,9 +211,9 @@ fun TripCardTicket(
                 ) {
                     Text(
                         text = "“${trip.description}”",
-                        modifier = Modifier.padding(10.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        modifier = Modifier.padding(Spacing.sm),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

@@ -23,9 +23,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MilitaryTech
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,11 +51,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.ui.components.parseInkColor
+import com.example.data.util.DateUtils
+import com.example.ui.components.SectionHeader
+import com.example.ui.components.Spacing
+import com.example.ui.components.TravelConfirmationDialog
+import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.InkAmber
 import com.example.ui.theme.InkCrimson
@@ -119,13 +121,16 @@ fun FinishTripScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "FINISH TRIP",
+                        text = "FINISH EXPEDITION",
                         style = MaterialTheme.typography.titleMedium,
                         letterSpacing = 1.sp
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.testTag("finish_trip_back_button")
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -143,10 +148,10 @@ fun FinishTripScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(horizontal = Spacing.screenHorizontal),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xl)
         ) {
-            // Celebratory Expedition Debrief Card
+            // 1. Debrief Summary Card
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -154,111 +159,97 @@ fun FinishTripScreen(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(22.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(Spacing.cardPadding)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(CircleShape)
-                                .background(Terracotta.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = "🏔️", fontSize = 30.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = "🎖️", fontSize = 22.sp)
+                            }
+                            Spacer(modifier = Modifier.width(Spacing.md))
+                            Column {
+                                Text(
+                                    text = currentTrip.name,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontFamily = FontFamily.Serif,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Ready to stamp your passport",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(
-                            text = "Journey Complete!",
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "Ready to stamp and archive ${currentTrip.name}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(Spacing.md))
 
                         // Stats Summary Row
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                                .padding(vertical = 12.dp, horizontal = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(Spacing.md),
+                            horizontalArrangement = Arrangement.SpaceAround
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
                                     text = "${moments.size}",
-                                    style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
-                                    color = Terracotta
+                                    fontSize = 18.sp,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
                                     text = "MOMENTS",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 0.5.sp
                                 )
                             }
 
-                            Box(
-                                modifier = Modifier
-                                    .width(1.dp)
-                                    .height(28.dp)
-                                    .background(MaterialTheme.colorScheme.outlineVariant)
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "${checklistItems.count { it.isCompleted }}/${checklistItems.size}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Terracotta
+                                )
+                                Text(
+                                    text = "CHECKLIST",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
 
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
                                     text = "${currentTrip.peopleCount}",
-                                    style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
                                     color = ForestPine
                                 )
                                 Text(
-                                    text = "TRAVELERS",
+                                    text = "EXPLORERS",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .width(1.dp)
-                                    .height(28.dp)
-                                    .background(MaterialTheme.colorScheme.outlineVariant)
-                            )
-
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                val packed = checklistItems.count { it.isCompleted }
-                                Text(
-                                    text = "$packed/${checklistItems.size}",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "ITEMS PACKED",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 0.5.sp
                                 )
                             }
                         }
@@ -266,99 +257,126 @@ fun FinishTripScreen(
                 }
             }
 
-            // Stamp Ink Color Selector
+            // 2. Ink Color Selection
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(18.dp)
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
                     ) {
-                        Text(
-                            text = "STAMP INK COLOR",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
+                        SectionHeader(title = "Select Stamp Ink", emoji = "🎨")
 
                         LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             items(inkOptions) { ink ->
-                                InkColorCircle(
-                                    option = ink,
-                                    isSelected = selectedInkHex == ink.hex,
-                                    onSelect = { selectedInkHex = ink.hex }
-                                )
+                                val isSelected = selectedInkHex.equals(ink.hex, ignoreCase = true)
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { selectedInkHex = ink.hex }
+                                        .padding(Spacing.xs)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(CircleShape)
+                                            .background(ink.color)
+                                            .border(
+                                                width = if (isSelected) 3.dp else 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
+                                                shape = CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(Spacing.xs))
+                                    Text(
+                                        text = ink.name,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // Stamp Style Selector
+            // 3. Stamp Motif / Style Option
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(18.dp)
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
                     ) {
-                        Text(
-                            text = "STAMP EMBLEM STYLE",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
+                        SectionHeader(title = "Passport Stamp Motif", emoji = "🏷️")
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                         ) {
                             styleOptions.forEach { style ->
+                                val isSelected = selectedStyle == style.id
                                 Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                    ),
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    },
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clip(RoundedCornerShape(12.dp))
                                         .clickable { selectedStyle = style.id }
-                                        .border(
-                                            width = if (selectedStyle == style.id) 2.dp else 1.dp,
-                                            color = if (selectedStyle == style.id) ForestPine else MaterialTheme.colorScheme.outlineVariant,
-                                            shape = RoundedCornerShape(12.dp)
-                                        ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (selectedStyle == style.id) ForestPine.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                                        modifier = Modifier.padding(vertical = Spacing.md, horizontal = Spacing.xs),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
-                                        Text(text = style.emoji, fontSize = 20.sp)
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(text = style.emoji, fontSize = 22.sp)
+                                        Spacer(modifier = Modifier.height(Spacing.xs))
                                         Text(
                                             text = style.name,
                                             fontSize = 10.sp,
-                                            fontWeight = if (selectedStyle == style.id) FontWeight.Bold else FontWeight.Normal,
-                                            textAlign = TextAlign.Center,
-                                            maxLines = 1,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            maxLines = 1
                                         )
                                     }
                                 }
@@ -368,166 +386,98 @@ fun FinishTripScreen(
                 }
             }
 
-            // Final Reflection Note
+            // 4. Final Reflection Note
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(18.dp)
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
                     ) {
-                        Text(
-                            text = "JOURNEY REFLECTION (OPTIONAL)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 0.5.sp
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        SectionHeader(title = "Expedition Reflection", emoji = "✍️")
+
                         OutlinedTextField(
                             value = reflectionNote,
                             onValueChange = { reflectionNote = it },
-                            placeholder = {
-                                Text(
-                                    "“An unforgettable climb through monsoon mist with great company...”",
-                                    fontSize = 14.sp
-                                )
-                            },
-                            minLines = 3,
-                            maxLines = 5,
+                            placeholder = { Text("e.g. Unforgettable summit climb through the heavy monsoon mist. Best chai at base village.") },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("reflection_note_input"),
+                                .testTag("finish_reflection_input"),
+                            minLines = 3,
+                            maxLines = 5,
                             shape = RoundedCornerShape(12.dp),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                                 unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                            ),
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+                            )
                         )
                     }
                 }
             }
 
-            // Finish & Generate Button
+            // Primary Action: ISSUE TRAVEL STAMP
             item {
-                Button(
-                    onClick = {
-                        showFinishConfirmationDialog = true
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp)
-                        .testTag("generate_stamp_button"),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Terracotta,
-                        contentColor = Color.White
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
+                val isFutureTrip = DateUtils.isFutureDate(currentTrip.date)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                 ) {
-                    Text(
-                        text = "GENERATE TRAVEL STAMP 🏔️",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontSize = 15.sp,
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-
-        // Finish Trip Confirmation Dialog
-        if (showFinishConfirmationDialog) {
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = { showFinishConfirmationDialog = false },
-                title = {
-                    Text(
-                        text = "Ready to save this journey?",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                text = {
-                    Text(
-                        text = "This will mark your trip as completed, generate an official Travel Stamp, and save it permanently to your collection.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                },
-                confirmButton = {
-                    Button(
+                    TravelPrimaryButton(
+                        text = if (isFutureTrip) "CANNOT FINISH (FUTURE DATE)" else "GENERATE OFFICIAL STAMP",
+                        icon = if (isFutureTrip) Icons.Default.Lock else Icons.Default.MilitaryTech,
+                        enabled = !isFutureTrip,
                         onClick = {
-                            showFinishConfirmationDialog = false
-                            viewModel.finishTrip(
-                                tripId = tripId,
-                                reflectionNote = reflectionNote.ifBlank { null },
-                                stampInkColorHex = selectedInkHex,
-                                stampStyle = selectedStyle,
-                                onFinished = onStampGenerated
-                            )
+                            if (!isFutureTrip) {
+                                showFinishConfirmationDialog = true
+                            }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Terracotta)
-                    ) {
-                        Text("Finish & Save")
-                    }
-                },
-                dismissButton = {
-                    androidx.compose.material3.TextButton(
-                        onClick = { showFinishConfirmationDialog = false }
-                    ) {
-                        Text("Not Yet")
+                        testTag = "generate_stamp_submit_button"
+                    )
+                    if (isFutureTrip) {
+                        Text(
+                            text = "Trip starts on ${currentTrip.date}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-            )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(Spacing.lg))
+            }
         }
     }
-}
 
-@Composable
-private fun InkColorCircle(
-    option: InkOption,
-    isSelected: Boolean,
-    onSelect: () -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clickable { onSelect() }
-            .padding(4.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(option.color)
-                .border(
-                    width = if (isSelected) 3.dp else 1.dp,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = "Selected",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
+    if (showFinishConfirmationDialog) {
+        TravelConfirmationDialog(
+            title = "Issue Travel Stamp?",
+            message = "This will mark '${currentTrip.name}' as completed and issue a permanent certified Travel Stamp with a unique serial number in your passport.",
+            confirmButtonText = "Seal Journey & Stamp",
+            onConfirm = {
+                showFinishConfirmationDialog = false
+                viewModel.finishTrip(
+                    tripId = currentTrip.id,
+                    reflectionNote = reflectionNote.trim().ifBlank { null },
+                    stampInkColorHex = selectedInkHex,
+                    stampStyle = selectedStyle,
+                    onFinished = { finishedTripId ->
+                        onStampGenerated(finishedTripId)
+                    }
                 )
-            }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = option.name,
-            fontSize = 10.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            color = MaterialTheme.colorScheme.onSurface
+            },
+            onDismiss = { showFinishConfirmationDialog = false }
         )
     }
 }

@@ -1,8 +1,12 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,52 +19,56 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Hiking
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import com.example.ui.components.TravelStampView
+import com.example.ui.components.Spacing
+import com.example.ui.components.TravelOutlinedButton
+import com.example.ui.components.TravelPrimaryButton
+import com.example.ui.components.TravelStampCard
 import com.example.ui.theme.ForestPine
-import com.example.ui.theme.OchreGold
-import com.example.ui.theme.SandCanvasLight
 import com.example.ui.theme.Terracotta
+import com.example.ui.util.StampExporter
 import com.example.ui.viewmodel.TravelViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,23 +81,59 @@ fun TravelStampScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     val trip by viewModel.currentTrip.collectAsStateWithLifecycle()
     val stamp by viewModel.currentTripStamp.collectAsStateWithLifecycle()
     val moments by viewModel.currentTripMoments.collectAsStateWithLifecycle()
 
+    var isSavingToGallery by remember { mutableStateOf(false) }
+    var isSharing by remember { mutableStateOf(false) }
+
+    // Stamp Reveal Animation States
+    val stampScale = remember { Animatable(1.25f) }
+    val stampAlpha = remember { Animatable(0f) }
+
+    LaunchedEffect(stamp?.id) {
+        if (stamp != null) {
+            stampAlpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 350, easing = LinearEasing)
+            )
+            stampScale.animateTo(
+                targetValue = 1.0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
+                )
+            )
+        }
+    }
+
     if (stamp == null || trip == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Retrieving your Travel Stamp...", style = MaterialTheme.typography.bodyLarge)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Terracotta)
+                Spacer(modifier = Modifier.height(Spacing.lg))
+                Text(
+                    text = "Retrieving your Travel Stamp...",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         return
     }
 
     val currentStamp = stamp!!
-    val currentTrip = trip!!
-    val photoMoments = moments.filter { !it.imageUri.isNullOrBlank() }
+    val firstPhotoUri = remember(moments) {
+        moments.firstOrNull { !it.imageUri.isNullOrBlank() }?.imageUri
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -100,7 +144,10 @@ fun TravelStampScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.testTag("stamp_back_button")
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -109,25 +156,13 @@ fun TravelStampScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = {
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(
-                                    Intent.EXTRA_SUBJECT,
-                                    "Travel Stamp: ${currentTrip.name}"
-                                )
-                                putExtra(
-                                    Intent.EXTRA_TEXT,
-                                    "🏔️ Travel Stamp — ${currentTrip.name}\n📍 ${currentTrip.destination}\n📅 ${currentTrip.date}\n👥 ${currentTrip.peopleCount} Explorers • ✨ ${moments.size} Moments logged.\n\n“${currentTrip.reflectionNote ?: currentTrip.description}”\n\nRecorded with Travel Stamp app."
-                                )
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Travel Stamp"))
-                        },
-                        modifier = Modifier.testTag("share_stamp_button")
+                        onClick = onCollectionClick,
+                        modifier = Modifier.testTag("collection_nav_icon")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Share"
+                            imageVector = Icons.Default.Collections,
+                            contentDescription = "My Collection",
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 },
@@ -142,182 +177,149 @@ fun TravelStampScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(horizontal = Spacing.screenHorizontal),
+            verticalArrangement = Arrangement.spacedBy(Spacing.lg),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Passport Page Container
+            // 1. Celebratory Reveal Badge
             item {
-                Card(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("stamp_passport_card"),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = SandCanvasLight
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, OchreGold.copy(alpha = 0.5f)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ForestPine.copy(alpha = 0.12f))
+                        .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Official Stamp Header
-                        Text(
-                            text = "PASSPORT MEMORANDUM",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.sp,
-                            color = ForestPine.copy(alpha = 0.7f),
-                            textAlign = TextAlign.Center
-                        )
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        // Large Digital Stamp Graphic
-                        TravelStampView(
-                            stamp = currentStamp,
-                            size = 250.dp,
-                            rotation = -1.5f,
-                            modifier = Modifier.testTag("travel_stamp_view")
-                        )
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        // Destination & Date subtitle
-                        Text(
-                            text = currentStamp.title,
-                            fontFamily = FontFamily.Serif,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            color = ForestPine,
-                            textAlign = TextAlign.Center
-                        )
-
-                        Text(
-                            text = currentStamp.destination,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Terracotta,
-                            textAlign = TextAlign.Center
-                        )
-
-                        if (!currentStamp.reflectionNote.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.White.copy(alpha = 0.7f),
-                                border = androidx.compose.foundation.BorderStroke(0.8.dp, OchreGold.copy(alpha = 0.4f))
-                            ) {
-                                Text(
-                                    text = "“${currentStamp.reflectionNote}”",
-                                    modifier = Modifier.padding(12.dp),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                    color = ForestPine,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = ForestPine,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.sm))
+                    Text(
+                        text = "Official Stamp ${currentStamp.stampCode} issued to passport",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = ForestPine,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
-            // Photo Moments Strip (if any photos were attached)
-            if (photoMoments.isNotEmpty()) {
-                item {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "EXPEDITION SNAPSHOTS",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp,
-                            modifier = Modifier.padding(bottom = 10.dp)
-                        )
-
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(photoMoments) { moment ->
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(moment.imageUri)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = "Moment snapshot",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(110.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-                                )
-                            }
-                        }
-                    }
+            // 2. Large Travel Stamp Card (Hero Artwork)
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .scale(stampScale.value)
+                        .alpha(stampAlpha.value)
+                ) {
+                    TravelStampCard(
+                        stamp = currentStamp,
+                        photoUri = firstPhotoUri,
+                        elevation = 6.dp
+                    )
                 }
             }
 
-            // Action Buttons (View Trip Card, Open Collection)
+            // 3. Primary Actions: SAVE TO GALLERY, SHARE STAMP, VIEW JOURNEY
             item {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
                 ) {
-                    Button(
+                    // SAVE TO GALLERY Button
+                    TravelPrimaryButton(
+                        text = "SAVE TO GALLERY",
+                        icon = Icons.Default.Download,
+                        isLoading = isSavingToGallery,
+                        onClick = {
+                            if (isSavingToGallery) return@TravelPrimaryButton
+                            isSavingToGallery = true
+                            coroutineScope.launch {
+                                val success = withContext(Dispatchers.IO) {
+                                    val bitmap = StampExporter.createStampBitmap(
+                                        context = context,
+                                        stamp = currentStamp,
+                                        photoUri = firstPhotoUri
+                                    )
+                                    val saved = StampExporter.saveToGallery(context, bitmap, currentStamp)
+                                    try {
+                                        bitmap.recycle()
+                                    } catch (_: Exception) {}
+                                    saved
+                                }
+                                isSavingToGallery = false
+                                if (success) {
+                                    snackbarHostState.showSnackbar("Stamp saved to Gallery ✓")
+                                } else {
+                                    snackbarHostState.showSnackbar("Couldn't save stamp. Please try again.")
+                                }
+                            }
+                        },
+                        testTag = "save_to_gallery_button"
+                    )
+
+                    // SHARE STAMP Button (Shares Image with FileProvider)
+                    TravelOutlinedButton(
+                        text = "SHARE STAMP",
+                        icon = Icons.Default.Share,
+                        isLoading = isSharing,
+                        onClick = {
+                            if (isSharing) return@TravelOutlinedButton
+                            isSharing = true
+                            coroutineScope.launch {
+                                val shareUri = withContext(Dispatchers.IO) {
+                                    val bitmap = StampExporter.createStampBitmap(
+                                        context = context,
+                                        stamp = currentStamp,
+                                        photoUri = firstPhotoUri
+                                    )
+                                    val uri = StampExporter.getShareableUri(context, bitmap, currentStamp)
+                                    try {
+                                        bitmap.recycle()
+                                    } catch (_: Exception) {}
+                                    uri
+                                }
+                                isSharing = false
+                                if (shareUri != null) {
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "image/png"
+                                        putExtra(Intent.EXTRA_STREAM, shareUri)
+                                        putExtra(
+                                            Intent.EXTRA_TEXT,
+                                            "Check out my Travel Stamp for ${currentStamp.title} (${currentStamp.stampCode})! 🏔️✨"
+                                        )
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(
+                                        Intent.createChooser(shareIntent, "Share Travel Stamp")
+                                    )
+                                } else {
+                                    snackbarHostState.showSnackbar("Unable to prepare stamp for sharing.")
+                                }
+                            }
+                        },
+                        testTag = "share_stamp_button"
+                    )
+
+                    // VIEW EXPEDITION LOG Button
+                    TravelOutlinedButton(
+                        text = "VIEW EXPEDITION LOG",
+                        icon = Icons.Default.Hiking,
                         onClick = onViewTripCard,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .testTag("open_trip_card_button"),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ForestPine,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Hiking,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "VIEW TRIP CARD & MOMENTS",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontSize = 13.sp
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = onCollectionClick,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .testTag("open_passport_collection_button"),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Collections,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "MY COLLECTION BOOK",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                        testTag = "view_trip_log_button"
+                    )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(24.dp))
+            item {
+                Spacer(modifier = Modifier.height(Spacing.xl))
             }
         }
     }

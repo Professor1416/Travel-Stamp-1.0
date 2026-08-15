@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,19 +19,17 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -39,11 +38,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,15 +59,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.MomentCategory
 import com.example.data.model.TripStatus
+import com.example.data.util.DateUtils
 import com.example.ui.components.ChecklistComponent
+import com.example.ui.components.EmptyStateView
 import com.example.ui.components.MomentItemCard
+import com.example.ui.components.SectionHeader
+import com.example.ui.components.Spacing
+import com.example.ui.components.TravelConfirmationDialog
+import com.example.ui.components.TravelOutlinedButton
+import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.components.TripCardTicket
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
@@ -98,6 +105,7 @@ fun TripCardScreen(
     var editDate by remember { mutableStateOf("") }
     var editPeopleCount by remember { mutableStateOf("1") }
     var editDescription by remember { mutableStateOf("") }
+    var editError by remember { mutableStateOf<String?>(null) }
 
     val filteredMoments = remember(moments, selectedCategoryFilter) {
         if (selectedCategoryFilter == null) {
@@ -120,18 +128,23 @@ fun TripCardScreen(
     val currentTrip = trip!!
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding(),
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "TRIP CARD",
+                        text = "EXPEDITION LOG",
                         style = MaterialTheme.typography.titleMedium,
                         letterSpacing = 1.sp
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.testTag("trip_card_back_button")
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -139,7 +152,10 @@ fun TripCardScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showMenu = true }) {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.testTag("trip_menu_button")
+                    ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = "Options"
@@ -157,15 +173,12 @@ fun TripCardScreen(
                                 editDestination = currentTrip.destination
                                 editDate = currentTrip.date
                                 editPeopleCount = currentTrip.peopleCount.toString()
-                                editDescription = currentTrip.description ?: ""
+                                editDescription = currentTrip.description
+                                editError = null
                                 showEditTripDialog = true
                             },
                             leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                             }
                         )
                         DropdownMenuItem(
@@ -176,9 +189,10 @@ fun TripCardScreen(
                             },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
+                                    Icons.Default.Delete,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         )
@@ -195,114 +209,69 @@ fun TripCardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(horizontal = Spacing.screenHorizontal),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xl)
         ) {
-            // Main Digital Travel Card
+            // 1. Trip Card Ticket Hero
             item {
-                TripCardTicket(
-                    trip = currentTrip,
-                    modifier = Modifier.testTag("trip_card_ticket")
-                )
+                TripCardTicket(trip = currentTrip)
             }
 
-            // Action Buttons Row (Add Moment & Finish Trip / View Stamp)
+            // 2. Primary Action Bar: View Stamp or Finish Journey
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = { onAddMomentClick(currentTrip.id) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp)
-                            .testTag("add_moment_button"),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ForestPine,
-                            contentColor = Color.White
-                        )
+                if (currentTrip.status == TripStatus.COMPLETED) {
+                    TravelPrimaryButton(
+                        text = "VIEW OFFICIAL TRAVEL STAMP",
+                        icon = Icons.Default.MilitaryTech,
+                        onClick = { onViewStampClick(currentTrip.id) },
+                        testTag = "view_official_stamp_button"
+                    )
+                } else {
+                    val isUpcoming = currentTrip.status == TripStatus.UPCOMING || DateUtils.isFutureDate(currentTrip.date)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                        TravelPrimaryButton(
+                            text = if (isUpcoming) "FINISH TRIP & GET STAMP" else "FINISH TRIP & EARN STAMP",
+                            icon = if (isUpcoming) Icons.Default.Lock else Icons.Default.MilitaryTech,
+                            enabled = !isUpcoming,
+                            onClick = {
+                                if (!isUpcoming) {
+                                    onFinishTripClick(currentTrip.id)
+                                }
+                            },
+                            testTag = "finish_trip_button"
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "ADD MOMENT",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
-                        )
-                    }
-
-                    if (currentTrip.status == TripStatus.ACTIVE) {
-                        Button(
-                            onClick = { onFinishTripClick(currentTrip.id) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp)
-                                .testTag("finish_trip_button"),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Terracotta,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MilitaryTech,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                        if (isUpcoming) {
                             Text(
-                                text = "FINISH TRIP",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = { onViewStampClick(currentTrip.id) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp)
-                                .testTag("view_stamp_button"),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text(
-                                text = "VIEW STAMP 🏅",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp,
-                                color = Terracotta
+                                text = "Trip starts on ${currentTrip.date}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
             }
 
-            // 🎒 Things to Carry Checklist Section
+            // 3. Expedition Checklist Section
             item {
                 ChecklistComponent(
                     items = checklistItems,
-                    onToggleItem = { itemId, completed ->
-                        viewModel.toggleChecklistItem(itemId, completed)
-                    },
                     onAddItem = { text ->
                         viewModel.addCustomChecklistItem(currentTrip.id, text)
                     },
+                    onToggleItem = { itemId, isCompleted ->
+                        viewModel.toggleChecklistItem(itemId, isCompleted)
+                    },
                     onDeleteItem = { itemId ->
                         viewModel.deleteChecklistItem(itemId)
-                    },
-                    modifier = Modifier.testTag("checklist_component")
+                    }
                 )
             }
 
-            // Trip Moments Header & Category Filter
+            // 4. Expedition Timeline / Moments Header & Filter
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
@@ -310,175 +279,218 @@ fun TripCardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = "✨", fontSize = 18.sp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "JOURNEY MOMENTS",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                letterSpacing = 1.sp
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                text = "${moments.size} Logged",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        SectionHeader(
+                            title = "Expedition Timeline",
+                            emoji = "⏱️",
+                            trailingText = "+ Log Moment",
+                            onTrailingClick = { onAddMomentClick(currentTrip.id) }
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(Spacing.sm))
 
-                    // Category Filter Horizontal Row
+                    // Category Filter Pills
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         item {
-                            FilterChipCustom(
-                                text = "All",
-                                emoji = "✦",
-                                isSelected = selectedCategoryFilter == null,
-                                onClick = { selectedCategoryFilter = null }
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = if (selectedCategoryFilter == null) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                modifier = Modifier.clickable { selectedCategoryFilter = null }
+                            ) {
+                                Text(
+                                    text = "All (${moments.size})",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (selectedCategoryFilter == null) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = 6.dp)
+                                )
+                            }
                         }
 
                         items(MomentCategory.entries) { cat ->
-                            FilterChipCustom(
-                                text = cat.title,
-                                emoji = cat.emoji,
-                                isSelected = selectedCategoryFilter == cat,
-                                onClick = {
-                                    selectedCategoryFilter = if (selectedCategoryFilter == cat) null else cat
+                            val count = moments.count { it.category == cat }
+                            if (count > 0 || selectedCategoryFilter == cat) {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = if (selectedCategoryFilter == cat) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    modifier = Modifier.clickable {
+                                        selectedCategoryFilter = if (selectedCategoryFilter == cat) null else cat
+                                    }
+                                ) {
+                                    Text(
+                                        text = "${cat.emoji} ${cat.title} ($count)",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (selectedCategoryFilter == cat) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                        modifier = Modifier.padding(horizontal = Spacing.md, vertical = 6.dp)
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 }
             }
 
-            // Moments List / Empty State
+            // 5. Moments Stream
             if (filteredMoments.isEmpty()) {
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(text = "📸", fontSize = 28.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = if (selectedCategoryFilter != null) "No moments in this category." else "No moments recorded yet.",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Tap + ADD MOMENT to log chai, rain, scenery, photos, or memories.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
+                    EmptyStateView(
+                        emoji = "📸",
+                        title = "No moments recorded yet",
+                        subtitle = "Capture milestones, trail notes, viewpoints and food stops along your journey.",
+                        actionText = "Log First Moment",
+                        onActionClick = { onAddMomentClick(currentTrip.id) }
+                    )
                 }
             } else {
                 items(filteredMoments, key = { it.id }) { moment ->
                     MomentItemCard(
                         moment = moment,
-                        onDelete = { viewModel.deleteMoment(moment.id) },
-                        modifier = Modifier.testTag("moment_item_${moment.id}")
+                        onDelete = { viewModel.deleteMoment(moment.id) }
                     )
                 }
             }
 
-            // Bottom Spacing
             item {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(Spacing.xxl))
             }
         }
     }
 
+    // Delete Trip Dialog (Careful, permanent deletion with confirmation)
+    if (showDeleteTripDialog) {
+        TravelConfirmationDialog(
+            title = "Delete this journey?",
+            message = "This will permanently remove the trip, moments, checklist and local references associated with it. Any previously issued stamp number will never be reused.",
+            confirmButtonText = "Delete Journey",
+            isDestructive = true,
+            onConfirm = {
+                showDeleteTripDialog = false
+                viewModel.deleteTrip(currentTrip.id)
+                onNavigateBack()
+            },
+            onDismiss = { showDeleteTripDialog = false }
+        )
+    }
+
+    // Edit Trip Dialog
     if (showEditTripDialog) {
         AlertDialog(
             onDismissRequest = { showEditTripDialog = false },
-            title = { Text("Edit Trip Card", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    text = "Edit Trip Details",
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedTextField(
                         value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text("Trip Name") },
+                        onValueChange = { editName = it; editError = null },
+                        label = { Text("Trip Name *") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
                     )
+
                     OutlinedTextField(
                         value = editDestination,
-                        onValueChange = { editDestination = it },
-                        label = { Text("Destination") },
+                        onValueChange = { editDestination = it; editError = null },
+                        label = { Text("Destination *") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
                     )
+
                     OutlinedTextField(
                         value = editDate,
-                        onValueChange = { editDate = it },
-                        label = { Text("Date") },
+                        onValueChange = { editDate = it; editError = null },
+                        label = { Text("Date *") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
                     )
+
                     OutlinedTextField(
                         value = editPeopleCount,
-                        onValueChange = { editPeopleCount = it },
-                        label = { Text("Travelers Count") },
+                        onValueChange = { editPeopleCount = it.filter { char -> char.isDigit() } },
+                        label = { Text("Number of People") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
                     )
+
                     OutlinedTextField(
                         value = editDescription,
                         onValueChange = { editDescription = it },
                         label = { Text("Short Description") },
+                        minLines = 2,
                         maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                     )
+
+                    if (editError != null) {
+                        Text(
+                            text = editError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        val count = editPeopleCount.toIntOrNull() ?: currentTrip.peopleCount
-                        if (editName.isNotBlank() && editDestination.isNotBlank()) {
-                            viewModel.updateTrip(
-                                tripId = currentTrip.id,
-                                name = editName,
-                                destination = editDestination,
-                                date = editDate.ifBlank { currentTrip.date },
-                                peopleCount = count,
-                                description = editDescription
-                            )
-                            showEditTripDialog = false
+                        if (editName.isBlank()) {
+                            editError = "Trip name cannot be empty"
+                            return@Button
                         }
+                        if (editDestination.isBlank()) {
+                            editError = "Destination cannot be empty"
+                            return@Button
+                        }
+                        val count = editPeopleCount.toIntOrNull() ?: currentTrip.peopleCount
+                        viewModel.updateTrip(
+                            tripId = currentTrip.id,
+                            name = editName.trim(),
+                            destination = editDestination.trim(),
+                            date = editDate.trim(),
+                            peopleCount = count,
+                            description = editDescription.trim(),
+                            onUpdated = {
+                                showEditTripDialog = false
+                            }
+                        )
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = ForestPine)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Save Changes")
                 }
@@ -487,62 +499,8 @@ fun TripCardScreen(
                 TextButton(onClick = { showEditTripDialog = false }) {
                     Text("Cancel")
                 }
-            }
-        )
-    }
-
-    if (showDeleteTripDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteTripDialog = false },
-            title = { Text("Delete This Trip?") },
-            text = { Text("This will permanently remove the trip card, checklist items, and all logged moments.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteTripDialog = false
-                        viewModel.deleteTrip(currentTrip.id) {
-                            onNavigateBack()
-                        }
-                    }
-                ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteTripDialog = false }) {
-                    Text("Cancel")
-                }
-            }
+            shape = RoundedCornerShape(18.dp)
         )
-    }
-}
-
-@Composable
-private fun FilterChipCustom(
-    text: String,
-    emoji: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = emoji, fontSize = 12.sp)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = text,
-                fontSize = 12.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-            )
-        }
     }
 }

@@ -2,6 +2,8 @@ package com.example.data
 
 import android.content.Context
 import com.example.data.local.TravelStampDatabase
+import com.example.data.local.UserPreferencesRepository
+import com.example.data.local.UserPreferencesRepositoryImpl
 import com.example.data.repository.ChecklistRepository
 import com.example.data.repository.ChecklistRepositoryImpl
 import com.example.data.repository.MomentRepository
@@ -12,14 +14,16 @@ import com.example.data.repository.TripRepository
 import com.example.data.repository.TripRepositoryImpl
 
 interface AppContainer {
+    val database: TravelStampDatabase
     val tripRepository: TripRepository
     val checklistRepository: ChecklistRepository
     val momentRepository: MomentRepository
     val travelStampRepository: TravelStampRepository
+    val userPreferencesRepository: UserPreferencesRepository
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
-    private val database: TravelStampDatabase by lazy {
+    override val database: TravelStampDatabase by lazy {
         TravelStampDatabase.getDatabase(context)
     }
 
@@ -37,5 +41,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val travelStampRepository: TravelStampRepository by lazy {
         TravelStampRepositoryImpl(database.travelStampDao())
+    }
+
+    override val userPreferencesRepository: UserPreferencesRepository by lazy {
+        UserPreferencesRepositoryImpl(context)
     }
 }

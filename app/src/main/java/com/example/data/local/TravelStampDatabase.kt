@@ -10,6 +10,7 @@ import com.example.data.local.dao.TravelStampDao
 import com.example.data.local.dao.TripDao
 import com.example.data.local.entity.ChecklistItemEntity
 import com.example.data.local.entity.MomentEntity
+import com.example.data.local.entity.StampSequenceEntity
 import com.example.data.local.entity.TravelStampEntity
 import com.example.data.local.entity.TripEntity
 
@@ -18,9 +19,10 @@ import com.example.data.local.entity.TripEntity
         TripEntity::class,
         ChecklistItemEntity::class,
         MomentEntity::class,
-        TravelStampEntity::class
+        TravelStampEntity::class,
+        StampSequenceEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class TravelStampDatabase : RoomDatabase() {

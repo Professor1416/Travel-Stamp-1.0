@@ -13,7 +13,10 @@ interface TripDao {
     @Query("SELECT * FROM trips ORDER BY createdAt DESC")
     fun getAllTrips(): Flow<List<TripEntity>>
 
-    @Query("SELECT * FROM trips WHERE status = 'ACTIVE' ORDER BY createdAt DESC")
+    @Query("SELECT * FROM trips ORDER BY createdAt DESC")
+    suspend fun getAllTripsListSync(): List<TripEntity>
+
+    @Query("SELECT * FROM trips WHERE status != 'COMPLETED' ORDER BY createdAt DESC")
     fun getActiveTrips(): Flow<List<TripEntity>>
 
     @Query("SELECT * FROM trips WHERE status = 'COMPLETED' ORDER BY completedAt DESC")

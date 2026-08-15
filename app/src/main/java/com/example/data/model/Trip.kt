@@ -1,8 +1,14 @@
 package com.example.data.model
 
 enum class TripStatus {
-    ACTIVE,
-    COMPLETED
+    UPCOMING,
+    IN_PROGRESS,
+    COMPLETED;
+
+    // Backward-compatibility alias
+    companion object {
+        val ACTIVE get() = IN_PROGRESS
+    }
 }
 
 data class Trip(
@@ -12,10 +18,8 @@ data class Trip(
     val date: String,
     val peopleCount: Int = 1,
     val description: String = "",
-    val status: TripStatus = TripStatus.ACTIVE,
-    val createdAt: Long = System.currentTimeMillis(),
+    val status: TripStatus = TripStatus.UPCOMING,
+    val stampEarned: Boolean = false,
     val completedAt: Long? = null,
-    val stampInkColorHex: String = "#1E3A2F",
-    val stampStyle: String = "MOUNTAIN",
-    val reflectionNote: String? = null
+    val createdAt: Long = System.currentTimeMillis()
 )

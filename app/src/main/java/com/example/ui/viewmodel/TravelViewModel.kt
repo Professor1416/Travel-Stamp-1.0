@@ -1,5 +1,7 @@
 package com.example.ui.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,6 +9,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.TravelStampApp
 import com.example.data.AppContainer
+import com.example.data.local.AppThemeMode
+import com.example.data.local.TravelStampDatabase
+import com.example.data.local.UserPreferencesRepository
 import com.example.data.model.ChecklistItem
 import com.example.data.model.Moment
 import com.example.data.model.MomentCategory
@@ -17,6 +22,10 @@ import com.example.data.repository.ChecklistRepository
 import com.example.data.repository.MomentRepository
 import com.example.data.repository.TravelStampRepository
 import com.example.data.repository.TripRepository
+import com.example.data.util.BackupExportResult
+import com.example.data.util.BackupImportResult
+import com.example.data.util.BackupManager
+import com.example.data.util.DateUtils
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,8 +41,13 @@ class TravelViewModel(
     private val tripRepository: TripRepository,
     private val checklistRepository: ChecklistRepository,
     private val momentRepository: MomentRepository,
-    private val travelStampRepository: TravelStampRepository
+    private val travelStampRepository: TravelStampRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val database: TravelStampDatabase
 ) : ViewModel() {
+
+    val hasCompletedOnboarding: StateFlow<Boolean> = userPreferencesRepository.hasCompletedOnboarding
+    val themeMode: StateFlow<AppThemeMode> = userPreferencesRepository.themeMode
 
     val allTrips: StateFlow<List<Trip>> = tripRepository.getAllTrips()
         .stateIn(
@@ -121,6 +135,14 @@ class TravelViewModel(
             initialValue = null
         )
 
+    fun completeOnboarding() {
+        userPreferencesRepository.setOnboardingCompleted(true)
+    }
+
+    fun setThemeMode(mode: AppThemeMode) {
+        userPreferencesRepository.setThemeMode(mode)
+    }
+
     fun selectTrip(tripId: Long) {
         _selectedTripId.value = tripId
     }
@@ -134,13 +156,21 @@ class TravelViewModel(
         onCreated: (Long) -> Unit
     ) {
         viewModelScope.launch {
+            val initialStatus = if (DateUtils.isFutureDate(date)) {
+                TripStatus.UPCOMING
+            } else {
+                TripStatus.IN_PROGRESS
+            }
+
             val trip = Trip(
                 name = name.trim(),
                 destination = destination.trim(),
                 date = date.trim(),
                 peopleCount = if (peopleCount < 1) 1 else peopleCount,
                 description = description.trim(),
-                status = TripStatus.ACTIVE,
+                status = initialStatus,
+                stampEarned = false,
+                completedAt = null,
                 createdAt = System.currentTimeMillis()
             )
             val newTripId = tripRepository.createTrip(trip)
@@ -206,12 +236,19 @@ class TravelViewModel(
     ) {
         viewModelScope.launch {
             val existing = tripRepository.getTripByIdSync(tripId) ?: return@launch
+            val resolvedStatus = when {
+                existing.status == TripStatus.COMPLETED && existing.stampEarned -> TripStatus.COMPLETED
+                DateUtils.isFutureDate(date) -> TripStatus.UPCOMING
+                else -> TripStatus.IN_PROGRESS
+            }
+
             val updated = existing.copy(
                 name = name.trim(),
                 destination = destination.trim(),
                 date = date.trim(),
                 peopleCount = if (peopleCount < 1) 1 else peopleCount,
-                description = description.trim()
+                description = description.trim(),
+                status = resolvedStatus
             )
             tripRepository.updateTrip(updated)
             onUpdated()
@@ -223,28 +260,41 @@ class TravelViewModel(
         reflectionNote: String?,
         stampInkColorHex: String,
         stampStyle: String,
-        onFinished: (Long) -> Unit
+        onFinished: (Long) -> Unit,
+        onError: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
-            val trip = tripRepository.getTripByIdSync(tripId) ?: return@launch
-            val moments = momentRepository.getMomentsForTripSync(tripId)
+            val trip = tripRepository.getTripByIdSync(tripId) ?: run {
+                onError("Journey not found")
+                return@launch
+            }
 
-            // Update trip record
-            tripRepository.finishTrip(
+            // Layer 3 validation: Never complete a future trip
+            if (DateUtils.isFutureDate(trip.date)) {
+                onError("Cannot finish a future journey. Starts on ${trip.date}.")
+                return@launch
+            }
+
+            val moments = momentRepository.getMomentsForTripSync(tripId)
+            val completedTime = System.currentTimeMillis()
+
+            // Update trip record to COMPLETED
+            val success = tripRepository.finishTrip(
                 tripId = tripId,
                 reflectionNote = reflectionNote,
                 stampInkColorHex = stampInkColorHex,
                 stampStyle = stampStyle
             )
 
-            // Generate auto-incrementing official Travel Stamp number: #001, #002, etc.
-            val stampCount = travelStampRepository.getStampsCountSync()
-            val nextNumber = stampCount + 1
-            val stampCode = "#" + String.format(java.util.Locale.getDefault(), "%03d", nextNumber)
+            if (!success) {
+                onError("Journey could not be completed.")
+                return@launch
+            }
 
-            val stamp = TravelStamp(
+            // Atomically issues or retrieves the official permanent TravelStamp.
+            // Guarantees sequential stamp numbering (#001, #002, etc.) and avoids duplicates
+            travelStampRepository.issueOfficialStampForTrip(
                 tripId = tripId,
-                stampCode = stampCode,
                 title = trip.name,
                 destination = trip.destination,
                 dateText = trip.date,
@@ -252,12 +302,10 @@ class TravelViewModel(
                 momentsCount = moments.size,
                 inkColorHex = stampInkColorHex,
                 stampStyle = stampStyle,
-                inspectionText = "OFFICIALLY LOGGED • CERTIFIED JOURNEY",
-                issuedAt = System.currentTimeMillis(),
-                reflectionNote = reflectionNote
+                reflectionNote = reflectionNote?.ifBlank { null } ?: trip.description,
+                completedAt = completedTime
             )
 
-            travelStampRepository.issueStamp(stamp)
             _selectedTripId.value = tripId
             onFinished(tripId)
         }
@@ -273,15 +321,17 @@ class TravelViewModel(
         }
     }
 
-    fun populateSampleJourney(onComplete: () -> Unit) {
+    fun populateSampleJourney(onComplete: (Long) -> Unit) {
         viewModelScope.launch {
             val sampleTrip = Trip(
                 name = "Harihar Fort",
                 destination = "Nashik, Maharashtra",
-                date = "18 August 2026",
+                date = "10 August 2026",
                 peopleCount = 4,
                 description = "Sunday monsoon trek with friends through rock-cut steps & misty cliffs.",
-                status = TripStatus.ACTIVE,
+                status = TripStatus.IN_PROGRESS,
+                stampEarned = false,
+                completedAt = null,
                 createdAt = System.currentTimeMillis() - 86400000
             )
             val tripId = tripRepository.createTrip(sampleTrip)
@@ -322,21 +372,40 @@ class TravelViewModel(
             )
 
             _selectedTripId.value = tripId
-            onComplete()
+            onComplete(tripId)
+        }
+    }
+
+    fun exportBackup(context: Context, onResult: (Result<BackupExportResult>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val result = BackupManager.createExportFile(context, database)
+                onResult(Result.success(result))
+            } catch (e: Exception) {
+                onResult(Result.failure(e))
+            }
+        }
+    }
+
+    fun importBackup(context: Context, uri: Uri, onResult: (Result<BackupImportResult>) -> Unit) {
+        viewModelScope.launch {
+            val result = BackupManager.importBackupFromJson(context, uri, database)
+            onResult(result)
         }
     }
 
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                val application =
-                    (this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TravelStampApp)
-                val container: AppContainer = application.container
+                val application = (this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TravelStampApp)
+                val appContainer: AppContainer = application.container
                 TravelViewModel(
-                    tripRepository = container.tripRepository,
-                    checklistRepository = container.checklistRepository,
-                    momentRepository = container.momentRepository,
-                    travelStampRepository = container.travelStampRepository
+                    tripRepository = appContainer.tripRepository,
+                    checklistRepository = appContainer.checklistRepository,
+                    momentRepository = appContainer.momentRepository,
+                    travelStampRepository = appContainer.travelStampRepository,
+                    userPreferencesRepository = appContainer.userPreferencesRepository,
+                    database = appContainer.database
                 )
             }
         }

@@ -10,20 +10,21 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.example.data.local.AppThemeMode
 
 private val DarkColorScheme = darkColorScheme(
     primary = SageGreen,
-    onPrimary = ForestPineDark,
+    onPrimary = Color(0xFF0F1B16),
     primaryContainer = ForestPine,
-    onPrimaryContainer = SageMuted,
+    onPrimaryContainer = Color(0xFFD3E6DC),
     secondary = TerracottaLight,
-    onSecondary = Color(0xFF491807),
+    onSecondary = Color(0xFF381408),
     secondaryContainer = TerracottaDark,
     onSecondaryContainer = TerracottaMuted,
     tertiary = OchreLight,
-    onTertiary = Color(0xFF402D0E),
+    onTertiary = Color(0xFF332008),
     tertiaryContainer = OchreDark,
-    onTertiaryContainer = SandSurfaceLight,
+    onTertiaryContainer = OchreParchment,
     background = SlateCanvasDark,
     onBackground = TextPrimaryDark,
     surface = SlateSurfaceDark,
@@ -31,22 +32,22 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = SlateSurfaceVariantDark,
     onSurfaceVariant = TextSecondaryDark,
     outline = BorderDark,
-    outlineVariant = Color(0xFF2A3631)
+    outlineVariant = Color(0xFF26322C)
 )
 
 private val LightColorScheme = lightColorScheme(
     primary = ForestPine,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD6E8DF),
+    primaryContainer = SageParchment,
     onPrimaryContainer = ForestPineDark,
     secondary = Terracotta,
     onSecondary = Color.White,
-    secondaryContainer = TerracottaMuted,
+    secondaryContainer = TerracottaSoft,
     onSecondaryContainer = TerracottaDark,
-    tertiary = OchreDark,
+    tertiary = OchreGold,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFF7EBD9),
-    onTertiaryContainer = Color(0xFF4E3516),
+    tertiaryContainer = OchreParchment,
+    onTertiaryContainer = OchreDark,
     background = SandCanvasLight,
     onBackground = TextPrimaryLight,
     surface = SandSurfaceLight,
@@ -54,21 +55,28 @@ private val LightColorScheme = lightColorScheme(
     surfaceVariant = SandSurfaceVariantLight,
     onSurfaceVariant = TextSecondaryLight,
     outline = BorderLight,
-    outlineVariant = Color(0xFFDFD6C2)
+    outlineVariant = Color(0xFFECE4D4)
 )
 
 @Composable
 fun MyApplicationTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Keep travel theme aesthetic cohesive
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    dynamicColor: Boolean = false, // Preserve coherent authentic vintage travel palette
     content: @Composable () -> Unit,
 ) {
+    val systemInDark = isSystemInDarkTheme()
+    val isDark = when (themeMode) {
+        AppThemeMode.SYSTEM -> systemInDark
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+    }
+
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> DarkColorScheme
+        isDark -> DarkColorScheme
         else -> LightColorScheme
     }
 

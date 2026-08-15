@@ -1,12 +1,13 @@
 package com.example.ui.navigation
 
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -18,12 +19,14 @@ import com.example.ui.screens.CollectionScreen
 import com.example.ui.screens.CreateTripScreen
 import com.example.ui.screens.FinishTripScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TravelStampScreen
 import com.example.ui.screens.TripCardScreen
 import com.example.ui.viewmodel.TravelViewModel
 
 object Destinations {
+    const val ONBOARDING = "onboarding"
     const val HOME = "home"
     const val CREATE_TRIP = "create_trip"
     const val TRIP_CARD = "trip_card/{tripId}"
@@ -45,15 +48,29 @@ fun TravelNavHost(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier
 ) {
+    val hasCompletedOnboarding by viewModel.hasCompletedOnboarding.collectAsStateWithLifecycle()
+    val startDest = if (hasCompletedOnboarding) Destinations.HOME else Destinations.ONBOARDING
+
     NavHost(
         navController = navController,
-        startDestination = Destinations.HOME,
+        startDestination = startDest,
         modifier = modifier.fillMaxSize(),
         enterTransition = { fadeIn(animationSpec = tween(220)) },
         exitTransition = { fadeOut(animationSpec = tween(220)) },
         popEnterTransition = { fadeIn(animationSpec = tween(220)) },
         popExitTransition = { fadeOut(animationSpec = tween(220)) }
     ) {
+        composable(Destinations.ONBOARDING) {
+            OnboardingScreen(
+                onFinished = {
+                    viewModel.completeOnboarding()
+                    navController.navigate(Destinations.HOME) {
+                        popUpTo(Destinations.ONBOARDING) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable(Destinations.HOME) {
             HomeScreen(
                 viewModel = viewModel,

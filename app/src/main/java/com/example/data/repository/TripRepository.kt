@@ -4,6 +4,7 @@ import com.example.data.local.dao.TripDao
 import com.example.data.local.entity.TripEntity
 import com.example.data.model.Trip
 import com.example.data.model.TripStatus
+import com.example.data.util.DateUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -17,10 +18,10 @@ interface TripRepository {
     suspend fun updateTrip(trip: Trip)
     suspend fun finishTrip(
         tripId: Long,
-        reflectionNote: String?,
-        stampInkColorHex: String,
-        stampStyle: String
-    )
+        reflectionNote: String? = null,
+        stampInkColorHex: String = "#8B1E0F",
+        stampStyle: String = "CIRCULAR"
+    ): Boolean
     suspend fun deleteTrip(id: Long)
     fun getCompletedTripsCount(): Flow<Int>
     fun getTotalTripsCount(): Flow<Int>
@@ -45,27 +46,41 @@ class TripRepositoryImpl(
     override suspend fun getTripByIdSync(id: Long): Trip? =
         tripDao.getTripByIdSync(id)?.toDomain()
 
-    override suspend fun createTrip(trip: Trip): Long =
-        tripDao.insertTrip(TripEntity.fromDomain(trip))
+    override suspend fun createTrip(trip: Trip): Long {
+        val initialStatus = if (DateUtils.isFutureDate(trip.date)) {
+            TripStatus.UPCOMING
+        } else {
+            TripStatus.IN_PROGRESS
+        }
+        val entity = TripEntity.fromDomain(trip.copy(status = initialStatus, stampEarned = false, completedAt = null))
+        return tripDao.insertTrip(entity)
+    }
 
-    override suspend fun updateTrip(trip: Trip) =
-        tripDao.updateTrip(TripEntity.fromDomain(trip))
+    override suspend fun updateTrip(trip: Trip) {
+        val entity = TripEntity.fromDomain(trip)
+        tripDao.updateTrip(entity)
+    }
 
     override suspend fun finishTrip(
         tripId: Long,
         reflectionNote: String?,
         stampInkColorHex: String,
         stampStyle: String
-    ) {
-        val existing = tripDao.getTripByIdSync(tripId) ?: return
+    ): Boolean {
+        val existing = tripDao.getTripByIdSync(tripId) ?: return false
+        
+        // Critical validation: Reject if trip date is strictly in the future
+        if (DateUtils.isFutureDate(existing.date)) {
+            return false
+        }
+
         val updated = existing.copy(
             status = TripStatus.COMPLETED.name,
-            completedAt = System.currentTimeMillis(),
-            reflectionNote = reflectionNote,
-            stampInkColorHex = stampInkColorHex,
-            stampStyle = stampStyle
+            stampEarned = true,
+            completedAt = System.currentTimeMillis()
         )
         tripDao.updateTrip(updated)
+        return true
     }
 
     override suspend fun deleteTrip(id: Long) =
