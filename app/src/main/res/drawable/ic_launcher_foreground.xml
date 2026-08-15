@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center coordinate is (54, 54), safe bounds approx 21 to 87 -->
+    <!-- Outer dashed/notched stamp circle ring -->
+    <path
+        android:pathData="M54,26 A28,28 0 1,0 54,82 A28,28 0 1,0 54,26"
+        android:strokeWidth="2.5"
+        android:strokeColor="#E6D5B8"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M54,29 A25,25 0 1,0 54,79 A25,25 0 1,0 54,29"
+        android:strokeWidth="0.8"
+        android:strokeColor="#D4A373"
+        android:fillColor="#00000000" />
+
+    <!-- Sun / Compass Star -->
+    <path
+        android:pathData="M54,34 L55.5,39 L60.5,39 L56.5,42 L58,47 L54,44 L50,47 L51.5,42 L47.5,39 L52.5,39 Z"
+        android:fillColor="#E07A5F" />
+
+    <!-- Mountain Peaks -->
+    <!-- Back Ridge -->
+    <path
+        android:pathData="M39,66 L49,49 L59,66 Z"
+        android:fillColor="#8EA89D" />
+    <path
+        android:pathData="M49,49 L59,66 L49,66 Z"
+        android:fillColor="#708B80" />
+
+    <!-- Front Major Mountain Peak -->
+    <path
+        android:pathData="M35,70 L54,42 L73,70 Z"
+        android:fillColor="#F4F1EA" />
+    <!-- Mountain Shadow / Depth -->
+    <path
+        android:pathData="M54,42 L73,70 L54,70 Z"
+        android:fillColor="#D8D0C0" />
+    <!-- Snow Ridge Detail -->
+    <path
+        android:pathData="M54,42 L48,51 L54,54 L51,60 L54,70"
+        android:strokeWidth="1.2"
+        android:strokeColor="#3D5A4C"
+        android:fillColor="#00000000" />
+
+    <!-- Small Right Mountain Peak -->
+    <path
+        android:pathData="M58,70 L68,54 L77,70 Z"
+        android:fillColor="#C2BAAA" />
+
+    <!-- Curved Horizon Base -->
+    <path
+        android:pathData="M32,71 L76,71"
+        android:strokeWidth="2"
+        android:strokeColor="#E6D5B8" />
+
+    <!-- Stamp Text dots -->
+    <path
+        android:pathData="M40,75 L43,75"
+        android:strokeWidth="1.5"
+        android:strokeColor="#E07A5F" />
+    <path
+        android:pathData="M51,75 L57,75"
+        android:strokeWidth="1.5"
+        android:strokeColor="#E07A5F" />
+    <path
+        android:pathData="M65,75 L68,75"
+        android:strokeWidth="1.5"
+        android:strokeColor="#E07A5F" />
+</vector>

@@ -1,0 +1,6 @@
+{
+  "name": "Travel Stamp",
+  "description": "Your journeys. Your memories. Your collection. Offline travel journal and collectible passport stamps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
