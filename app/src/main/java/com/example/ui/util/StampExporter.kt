@@ -19,6 +19,7 @@ import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import com.example.data.model.TravelStamp
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import kotlin.math.cos
@@ -26,7 +27,7 @@ import kotlin.math.sin
 
 /**
  * High-resolution, standalone image exporter for Travel Stamps.
- * Renders authentic passport-style artwork offline to a clean Bitmap and handles Gallery saving and System Sharing.
+ * Hardened against OOM, handles media failure gracefully, and renders authentic passport-style artwork.
  */
 object StampExporter {
 
@@ -49,7 +50,11 @@ object StampExporter {
     ): Bitmap {
         val width = 1080
         val height = 1350
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = try {
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        } catch (_: OutOfMemoryError) {
+            Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+        }
         val canvas = Canvas(bitmap)
 
         val inkColorInt = parseColor(stamp.inkColorHex, AndroidColor.parseColor("#1E3A2F"))
@@ -117,7 +122,7 @@ object StampExporter {
         var stampRadius = 260f
 
         if (!photoUri.isNullOrBlank()) {
-            val photoBitmap = loadScaledBitmap(context, photoUri, 360, 260)
+            val photoBitmap = loadScaledBitmap(context, photoUri, 400, 300)
             if (photoBitmap != null) {
                 val photoRect = RectF(width / 2f - 180f, 160f, width / 2f + 180f, 400f)
                 val photoBorderPaint = Paint().apply {
@@ -127,8 +132,7 @@ object StampExporter {
                     strokeWidth = 3f
                 }
                 val photoFillPaint = Paint().apply { isAntiAlias = true }
-                
-                // Draw rounded photo card
+
                 canvas.save()
                 val clipPath = Path().apply {
                     addRoundRect(photoRect, 18f, 18f, Path.Direction.CW)
@@ -291,13 +295,19 @@ object StampExporter {
         }
         canvas.drawCircle(centerX, centerY, radius - 48f, hairlinePaint)
 
-        // Inner Stamp Content
+        // Inner Stamp Content: Motif Emoji
+        val motifEmoji = when (stamp.stampStyle) {
+            "COMPASS" -> "🧭"
+            "PINE" -> "🌲"
+            "EXPEDITION" -> "⚜️"
+            else -> "🏔️"
+        }
         val iconPaint = Paint().apply {
             isAntiAlias = true
             textSize = 40f
             textAlign = Paint.Align.CENTER
         }
-        canvas.drawText("🏔️", centerX, centerY - radius * 0.44f, iconPaint)
+        canvas.drawText(motifEmoji, centerX, centerY - radius * 0.44f, iconPaint)
 
         // Destination / Title
         val sealTitlePaint = Paint().apply {
@@ -379,22 +389,22 @@ object StampExporter {
     private fun loadScaledBitmap(context: Context, uriString: String, reqWidth: Int, reqHeight: Int): Bitmap? {
         return try {
             val uri = Uri.parse(uriString)
-            var input: InputStream? = if (uri.scheme == "file" || uri.scheme == null) {
-                val file = File(uri.path ?: uriString)
-                if (file.exists()) file.inputStream() else null
-            } else {
-                context.contentResolver.openInputStream(uri)
+            val openInput: () -> InputStream? = {
+                if (uri.scheme == "file" || uri.scheme == null) {
+                    val file = File(uri.path ?: uriString)
+                    if (file.exists() && file.canRead()) FileInputStream(file) else null
+                } else {
+                    context.contentResolver.openInputStream(uri)
+                }
             }
-
-            if (input == null) return null
 
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
-            BitmapFactory.decodeStream(input, null, options)
-            input.close()
+            openInput()?.use { input ->
+                BitmapFactory.decodeStream(input, null, options)
+            } ?: return null
 
-            // Calculate inSampleSize
             var sampleSize = 1
             if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
                 val halfHeight = options.outHeight / 2
@@ -409,15 +419,12 @@ object StampExporter {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
 
-            input = if (uri.scheme == "file" || uri.scheme == null) {
-                File(uri.path ?: uriString).inputStream()
-            } else {
-                context.contentResolver.openInputStream(uri)
+            openInput()?.use { input ->
+                BitmapFactory.decodeStream(input, null, decodeOptions)
             }
-            val result = BitmapFactory.decodeStream(input, null, decodeOptions)
-            input?.close()
-            result
         } catch (_: Exception) {
+            null
+        } catch (_: OutOfMemoryError) {
             null
         }
     }
@@ -487,7 +494,11 @@ object StampExporter {
             }
 
             val authority = "${context.packageName}.fileprovider"
-            FileProvider.getUriForFile(context, authority, file)
+            try {
+                FileProvider.getUriForFile(context, authority, file)
+            } catch (_: Exception) {
+                Uri.fromFile(file)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null

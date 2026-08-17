@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,12 +34,16 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -48,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,20 +64,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.model.MomentCategory
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.Spacing
-import com.example.ui.components.TravelOutlinedButton
 import com.example.ui.components.TravelPrimaryButton
-import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
 import com.example.ui.util.PhotoUtils
 import com.example.ui.viewmodel.TravelViewModel
@@ -84,20 +90,53 @@ fun AddMomentScreen(
 ) {
     val context = LocalContext.current
 
-    var selectedCategory by remember { mutableStateOf(MomentCategory.PHOTO) }
-    var noteText by remember { mutableStateOf("") }
-    var attachedImageUriString by remember { mutableStateOf<String?>(null) }
-    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
-    var cameraPermissionDeniedNotice by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    // State preservation with rememberSaveable across configuration changes & process recreation
+    var selectedCategoryName by rememberSaveable { mutableStateOf(MomentCategory.PHOTO.name) }
+    var noteText by rememberSaveable { mutableStateOf("") }
+    var attachedImageUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    var tempCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    var cameraPermissionDeniedNotice by rememberSaveable { mutableStateOf(false) }
+    var isPermanentlyDenied by rememberSaveable { mutableStateOf(false) }
+    var isCameraLaunching by rememberSaveable { mutableStateOf(false) }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val selectedCategory = remember(selectedCategoryName) {
+        MomentCategory.fromName(selectedCategoryName)
+    }
 
     // Camera Capture Launcher
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-        if (success && tempCameraUri != null) {
-            val permanentPath = PhotoUtils.copyUriToPermanentStorage(context, tempCameraUri!!)
-            attachedImageUriString = permanentPath ?: tempCameraUri.toString()
+        isCameraLaunching = false
+        val uriStr = tempCameraUriString
+        if (success && !uriStr.isNullOrBlank()) {
+            val cameraUri = Uri.parse(uriStr)
+            val permanentPath = PhotoUtils.copyUriToPermanentStorage(context, cameraUri)
+            if (permanentPath != null) {
+                attachedImageUriString = permanentPath
+                errorMessage = null
+            } else {
+                errorMessage = "Could not process captured photo. Please try again."
+            }
+        } else {
+            // Cancelled or failed capture - clean up empty temp file
+            PhotoUtils.cleanUpTempFile(context, uriStr)
+        }
+    }
+
+    // Internal camera launch helper
+    fun triggerCamera() {
+        if (isCameraLaunching) return
+        isCameraLaunching = true
+        errorMessage = null
+        try {
+            val uri = PhotoUtils.createCameraTempUri(context)
+            tempCameraUriString = uri.toString()
+            cameraLauncher.launch(uri)
+        } catch (e: Exception) {
+            isCameraLaunching = false
+            errorMessage = "Camera application is unavailable. You can choose a photo from your gallery."
         }
     }
 
@@ -107,11 +146,16 @@ fun AddMomentScreen(
     ) { isGranted ->
         if (isGranted) {
             cameraPermissionDeniedNotice = false
-            val uri = PhotoUtils.createCameraTempUri(context)
-            tempCameraUri = uri
-            cameraLauncher.launch(uri)
+            isPermanentlyDenied = false
+            triggerCamera()
         } else {
             cameraPermissionDeniedNotice = true
+            isCameraLaunching = false
+            val activity = context as? Activity
+            val shouldShowRationale = activity?.let {
+                ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
+            } ?: true
+            isPermanentlyDenied = !shouldShowRationale
         }
     }
 
@@ -122,6 +166,7 @@ fun AddMomentScreen(
         if (uri != null) {
             val permanentPath = PhotoUtils.copyUriToPermanentStorage(context, uri)
             attachedImageUriString = permanentPath ?: uri.toString()
+            errorMessage = null
         }
     }
 
@@ -182,7 +227,7 @@ fun AddMomentScreen(
                     ) {
                         SectionHeader(title = "Moment Category", emoji = "🏷️")
 
-                        // 2-column grid for the 8 categories
+                        // 2-column grid for categories
                         val categories = MomentCategory.entries
                         for (i in categories.indices step 2) {
                             Row(
@@ -192,14 +237,14 @@ fun AddMomentScreen(
                                 CategoryOptionCard(
                                     category = categories[i],
                                     isSelected = selectedCategory == categories[i],
-                                    onClick = { selectedCategory = categories[i] },
+                                    onClick = { selectedCategoryName = categories[i].name },
                                     modifier = Modifier.weight(1f)
                                 )
                                 if (i + 1 < categories.size) {
                                     CategoryOptionCard(
                                         category = categories[i + 1],
                                         isSelected = selectedCategory == categories[i + 1],
-                                        onClick = { selectedCategory = categories[i + 1] },
+                                        onClick = { selectedCategoryName = categories[i + 1].name },
                                         modifier = Modifier.weight(1f)
                                     )
                                 } else {
@@ -278,7 +323,7 @@ fun AddMomentScreen(
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clickable {
+                                        .clickable(enabled = !isCameraLaunching) {
                                             val hasPermission = ContextCompat.checkSelfPermission(
                                                 context,
                                                 Manifest.permission.CAMERA
@@ -286,9 +331,8 @@ fun AddMomentScreen(
 
                                             if (hasPermission) {
                                                 cameraPermissionDeniedNotice = false
-                                                val uri = PhotoUtils.createCameraTempUri(context)
-                                                tempCameraUri = uri
-                                                cameraLauncher.launch(uri)
+                                                isPermanentlyDenied = false
+                                                triggerCamera()
                                             } else {
                                                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                                             }
@@ -351,29 +395,74 @@ fun AddMomentScreen(
                                 }
                             }
 
-                            // Graceful camera denial fallback notification
+                            // Graceful camera denial UX with direct actions
                             if (cameraPermissionDeniedNotice) {
                                 Surface(
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     color = MaterialTheme.colorScheme.surfaceVariant,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(
+                                    Column(
                                         modifier = Modifier.padding(Spacing.md),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Info,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(Spacing.sm))
-                                        Text(
-                                            text = "Camera permission is needed to take a photo. You can still choose from your gallery.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Info,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(Spacing.sm))
+                                            Text(
+                                                text = if (isPermanentlyDenied) {
+                                                    "Camera permission is disabled in system settings. Enable it to take photos directly."
+                                                } else {
+                                                    "Camera permission is required to capture photos directly."
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            if (isPermanentlyDenied) {
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                            data = Uri.fromParts("package", context.packageName, null)
+                                                        }
+                                                        context.startActivity(intent)
+                                                    },
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Settings,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("Open Settings", fontSize = 12.sp)
+                                                }
+                                            } else {
+                                                Button(
+                                                    onClick = {
+                                                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                                    },
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = MaterialTheme.colorScheme.primary
+                                                    )
+                                                ) {
+                                                    Text("Allow Camera", fontSize = 12.sp)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

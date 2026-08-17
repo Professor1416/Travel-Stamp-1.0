@@ -13,6 +13,7 @@ enum class TripStatus {
 
 data class Trip(
     val id: Long = 0,
+    val uuid: String = java.util.UUID.randomUUID().toString(),
     val name: String,
     val destination: String,
     val date: String,
@@ -21,5 +22,7 @@ data class Trip(
     val status: TripStatus = TripStatus.UPCOMING,
     val stampEarned: Boolean = false,
     val completedAt: Long? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val deletedAt: Long? = null
 )

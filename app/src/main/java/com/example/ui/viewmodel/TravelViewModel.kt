@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TravelViewModel(
@@ -48,6 +49,9 @@ class TravelViewModel(
 
     val hasCompletedOnboarding: StateFlow<Boolean> = userPreferencesRepository.hasCompletedOnboarding
     val themeMode: StateFlow<AppThemeMode> = userPreferencesRepository.themeMode
+
+    private val _isProcessing = MutableStateFlow(false)
+    val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
     val allTrips: StateFlow<List<Trip>> = tripRepository.getAllTrips()
         .stateIn(
@@ -155,29 +159,36 @@ class TravelViewModel(
         description: String,
         onCreated: (Long) -> Unit
     ) {
-        viewModelScope.launch {
-            val initialStatus = if (DateUtils.isFutureDate(date)) {
-                TripStatus.UPCOMING
-            } else {
-                TripStatus.IN_PROGRESS
-            }
+        if (_isProcessing.value) return
+        _isProcessing.value = true
 
-            val trip = Trip(
-                name = name.trim(),
-                destination = destination.trim(),
-                date = date.trim(),
-                peopleCount = if (peopleCount < 1) 1 else peopleCount,
-                description = description.trim(),
-                status = initialStatus,
-                stampEarned = false,
-                completedAt = null,
-                createdAt = System.currentTimeMillis()
-            )
-            val newTripId = tripRepository.createTrip(trip)
-            // Seed standard checklist items
-            checklistRepository.seedDefaultItems(newTripId)
-            _selectedTripId.value = newTripId
-            onCreated(newTripId)
+        viewModelScope.launch {
+            try {
+                val initialStatus = if (DateUtils.isFutureDate(date)) {
+                    TripStatus.UPCOMING
+                } else {
+                    TripStatus.IN_PROGRESS
+                }
+
+                val trip = Trip(
+                    name = name.trim(),
+                    destination = destination.trim(),
+                    date = date.trim(),
+                    peopleCount = if (peopleCount < 1) 1 else peopleCount,
+                    description = description.trim(),
+                    status = initialStatus,
+                    stampEarned = false,
+                    completedAt = null,
+                    createdAt = System.currentTimeMillis()
+                )
+                val newTripId = tripRepository.createTrip(trip)
+                // Seed standard checklist items
+                checklistRepository.seedDefaultItems(newTripId)
+                _selectedTripId.value = newTripId
+                onCreated(newTripId)
+            } finally {
+                _isProcessing.value = false
+            }
         }
     }
 
@@ -206,16 +217,23 @@ class TravelViewModel(
         imageUri: String?,
         onSaved: () -> Unit = {}
     ) {
+        if (_isProcessing.value) return
+        _isProcessing.value = true
+
         viewModelScope.launch {
-            val moment = Moment(
-                tripId = tripId,
-                category = category,
-                note = note.trim(),
-                imageUri = imageUri,
-                timestamp = System.currentTimeMillis()
-            )
-            momentRepository.addMoment(moment)
-            onSaved()
+            try {
+                val moment = Moment(
+                    tripId = tripId,
+                    category = category,
+                    note = note.trim(),
+                    imageUri = imageUri,
+                    timestamp = System.currentTimeMillis()
+                )
+                momentRepository.addMoment(moment)
+                onSaved()
+            } finally {
+                _isProcessing.value = false
+            }
         }
     }
 
@@ -248,7 +266,8 @@ class TravelViewModel(
                 date = date.trim(),
                 peopleCount = if (peopleCount < 1) 1 else peopleCount,
                 description = description.trim(),
-                status = resolvedStatus
+                status = resolvedStatus,
+                updatedAt = System.currentTimeMillis()
             )
             tripRepository.updateTrip(updated)
             onUpdated()
@@ -263,51 +282,57 @@ class TravelViewModel(
         onFinished: (Long) -> Unit,
         onError: (String) -> Unit = {}
     ) {
+        if (_isProcessing.value) return
+        _isProcessing.value = true
+
         viewModelScope.launch {
-            val trip = tripRepository.getTripByIdSync(tripId) ?: run {
-                onError("Journey not found")
-                return@launch
+            try {
+                val trip = tripRepository.getTripByIdSync(tripId) ?: run {
+                    onError("Journey not found")
+                    return@launch
+                }
+
+                // Layer 3 validation: Never complete a future trip
+                if (DateUtils.isFutureDate(trip.date)) {
+                    onError("Cannot finish a future journey. Starts on ${trip.date}.")
+                    return@launch
+                }
+
+                val moments = momentRepository.getMomentsForTripSync(tripId)
+                val completedTime = System.currentTimeMillis()
+
+                // Update trip record to COMPLETED
+                val success = tripRepository.finishTrip(
+                    tripId = tripId,
+                    reflectionNote = reflectionNote,
+                    stampInkColorHex = stampInkColorHex,
+                    stampStyle = stampStyle
+                )
+
+                if (!success) {
+                    onError("Journey could not be completed.")
+                    return@launch
+                }
+
+                // Atomically issues or retrieves the official permanent TravelStamp.
+                travelStampRepository.issueOfficialStampForTrip(
+                    tripId = tripId,
+                    title = trip.name,
+                    destination = trip.destination,
+                    dateText = trip.date,
+                    peopleCount = trip.peopleCount,
+                    momentsCount = moments.size,
+                    inkColorHex = stampInkColorHex,
+                    stampStyle = stampStyle,
+                    reflectionNote = reflectionNote?.ifBlank { null } ?: trip.description,
+                    completedAt = completedTime
+                )
+
+                _selectedTripId.value = tripId
+                onFinished(tripId)
+            } finally {
+                _isProcessing.value = false
             }
-
-            // Layer 3 validation: Never complete a future trip
-            if (DateUtils.isFutureDate(trip.date)) {
-                onError("Cannot finish a future journey. Starts on ${trip.date}.")
-                return@launch
-            }
-
-            val moments = momentRepository.getMomentsForTripSync(tripId)
-            val completedTime = System.currentTimeMillis()
-
-            // Update trip record to COMPLETED
-            val success = tripRepository.finishTrip(
-                tripId = tripId,
-                reflectionNote = reflectionNote,
-                stampInkColorHex = stampInkColorHex,
-                stampStyle = stampStyle
-            )
-
-            if (!success) {
-                onError("Journey could not be completed.")
-                return@launch
-            }
-
-            // Atomically issues or retrieves the official permanent TravelStamp.
-            // Guarantees sequential stamp numbering (#001, #002, etc.) and avoids duplicates
-            travelStampRepository.issueOfficialStampForTrip(
-                tripId = tripId,
-                title = trip.name,
-                destination = trip.destination,
-                dateText = trip.date,
-                peopleCount = trip.peopleCount,
-                momentsCount = moments.size,
-                inkColorHex = stampInkColorHex,
-                stampStyle = stampStyle,
-                reflectionNote = reflectionNote?.ifBlank { null } ?: trip.description,
-                completedAt = completedTime
-            )
-
-            _selectedTripId.value = tripId
-            onFinished(tripId)
         }
     }
 
@@ -322,75 +347,93 @@ class TravelViewModel(
     }
 
     fun populateSampleJourney(onComplete: (Long) -> Unit) {
+        if (_isProcessing.value) return
+        _isProcessing.value = true
+
         viewModelScope.launch {
-            val sampleTrip = Trip(
-                name = "Harihar Fort",
-                destination = "Nashik, Maharashtra",
-                date = "10 August 2026",
-                peopleCount = 4,
-                description = "Sunday monsoon trek with friends through rock-cut steps & misty cliffs.",
-                status = TripStatus.IN_PROGRESS,
-                stampEarned = false,
-                completedAt = null,
-                createdAt = System.currentTimeMillis() - 86400000
-            )
-            val tripId = tripRepository.createTrip(sampleTrip)
-            checklistRepository.seedDefaultItems(tripId)
+            try {
+                val sampleTrip = Trip(
+                    name = "Harihar Fort",
+                    destination = "Nashik, Maharashtra",
+                    date = "10 August 2026",
+                    peopleCount = 4,
+                    description = "Sunday monsoon trek with friends through rock-cut steps & misty cliffs.",
+                    status = TripStatus.IN_PROGRESS,
+                    stampEarned = false,
+                    completedAt = null,
+                    createdAt = System.currentTimeMillis() - 86400000
+                )
+                val tripId = tripRepository.createTrip(sampleTrip)
+                checklistRepository.seedDefaultItems(tripId)
 
-            // Add sample moments
-            momentRepository.addMoment(
-                Moment(
-                    tripId = tripId,
-                    category = MomentCategory.CHAI,
-                    note = "Hot cutting chai and ginger pakodas at the base village before starting the ascent.",
-                    timestamp = System.currentTimeMillis() - 40000000
+                momentRepository.addMoment(
+                    Moment(
+                        tripId = tripId,
+                        category = MomentCategory.CHAI,
+                        note = "Hot cutting chai and ginger pakodas at the base village before starting the ascent.",
+                        timestamp = System.currentTimeMillis() - 40000000
+                    )
                 )
-            )
-            momentRepository.addMoment(
-                Moment(
-                    tripId = tripId,
-                    category = MomentCategory.RAIN,
-                    note = "Heavy clouds opened up right at the plateau. Incredible monsoon mist swirling everywhere!",
-                    timestamp = System.currentTimeMillis() - 30000000
+                momentRepository.addMoment(
+                    Moment(
+                        tripId = tripId,
+                        category = MomentCategory.RAIN,
+                        note = "Heavy clouds opened up right at the plateau. Incredible monsoon mist swirling everywhere!",
+                        timestamp = System.currentTimeMillis() - 30000000
+                    )
                 )
-            )
-            momentRepository.addMoment(
-                Moment(
-                    tripId = tripId,
-                    category = MomentCategory.VIEW,
-                    note = "Standing at the 80-degree vertical stone stairs looking into the boundless valley.",
-                    timestamp = System.currentTimeMillis() - 20000000
+                momentRepository.addMoment(
+                    Moment(
+                        tripId = tripId,
+                        category = MomentCategory.VIEW,
+                        note = "Standing at the 80-degree vertical stone stairs looking into the boundless valley.",
+                        timestamp = System.currentTimeMillis() - 20000000
+                    )
                 )
-            )
-            momentRepository.addMoment(
-                Moment(
-                    tripId = tripId,
-                    category = MomentCategory.MEMORY,
-                    note = "Summit conquered! Shared stories with all 4 of us at the top shrine.",
-                    timestamp = System.currentTimeMillis() - 10000000
+                momentRepository.addMoment(
+                    Moment(
+                        tripId = tripId,
+                        category = MomentCategory.MEMORY,
+                        note = "Summit conquered! Shared stories with all 4 of us at the top shrine.",
+                        timestamp = System.currentTimeMillis() - 10000000
+                    )
                 )
-            )
 
-            _selectedTripId.value = tripId
-            onComplete(tripId)
+                _selectedTripId.value = tripId
+                onComplete(tripId)
+            } finally {
+                _isProcessing.value = false
+            }
         }
     }
 
     fun exportBackup(context: Context, onResult: (Result<BackupExportResult>) -> Unit) {
+        if (_isProcessing.value) return
+        _isProcessing.value = true
+
         viewModelScope.launch {
             try {
                 val result = BackupManager.createExportFile(context, database)
                 onResult(Result.success(result))
             } catch (e: Exception) {
                 onResult(Result.failure(e))
+            } finally {
+                _isProcessing.value = false
             }
         }
     }
 
     fun importBackup(context: Context, uri: Uri, onResult: (Result<BackupImportResult>) -> Unit) {
+        if (_isProcessing.value) return
+        _isProcessing.value = true
+
         viewModelScope.launch {
-            val result = BackupManager.importBackupFromJson(context, uri, database)
-            onResult(result)
+            try {
+                val result = BackupManager.importBackup(context, uri, database)
+                onResult(result)
+            } finally {
+                _isProcessing.value = false
+            }
         }
     }
 

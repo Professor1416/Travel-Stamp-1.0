@@ -245,7 +245,7 @@ fun SettingsScreen(
 
                         // Export Backup Button
                         TravelPrimaryButton(
-                            text = "EXPORT MY TRIPS (JSON)",
+                            text = "EXPORT PASSPORT BACKUP (.TSBACKUP)",
                             icon = Icons.Default.FileUpload,
                             isLoading = isExporting,
                             onClick = {
@@ -257,13 +257,13 @@ fun SettingsScreen(
                                         isExporting = false
                                         result.onSuccess { exportResult ->
                                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "application/json"
+                                                type = "application/octet-stream"
                                                 putExtra(Intent.EXTRA_STREAM, exportResult.fileUri)
-                                                putExtra(Intent.EXTRA_SUBJECT, "Travel Stamp Backup")
+                                                putExtra(Intent.EXTRA_SUBJECT, "Travel Stamp Backup (${exportResult.fileName})")
                                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                             }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Save Backup File"))
-                                            statusMessage = "Backup ready: ${exportResult.totalTrips} journeys exported."
+                                            context.startActivity(Intent.createChooser(shareIntent, "Save Backup Archive"))
+                                            statusMessage = "Backup ready: ${exportResult.totalTrips} journeys & ${exportResult.totalStamps} stamps archived."
                                         }.onFailure {
                                             statusMessage = "Export failed: ${it.localizedMessage ?: "Please try again."}"
                                         }
@@ -275,11 +275,11 @@ fun SettingsScreen(
 
                         // Import Backup Button
                         TravelOutlinedButton(
-                            text = "IMPORT BACKUP FILE",
+                            text = "IMPORT BACKUP FILE (.TSBACKUP / .JSON)",
                             icon = Icons.Default.FileDownload,
                             isLoading = isImporting,
                             onClick = {
-                                importFilePickerLauncher.launch("application/json")
+                                importFilePickerLauncher.launch("*/*")
                             },
                             testTag = "import_backup_button"
                         )

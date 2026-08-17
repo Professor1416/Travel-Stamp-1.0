@@ -18,6 +18,7 @@ data class TravelStamp(
     val inspectionText: String = "OFFICIALLY LOGGED • CERTIFIED JOURNEY",
     val issuedAt: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
     val deletedAt: Long? = null,
     val reflectionNote: String? = null

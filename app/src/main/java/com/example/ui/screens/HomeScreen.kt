@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.CompactStampBadge
 import com.example.ui.components.EmptyStateView
+import com.example.ui.components.MoreStampsIndicator
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelPrimaryButton
@@ -60,6 +61,8 @@ import com.example.ui.theme.ForestPine
 import com.example.ui.theme.OchreGold
 import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
+
+private const val HOME_COLLECTION_PREVIEW_LIMIT = 4
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -171,7 +174,7 @@ fun HomeScreen(
                 )
             }
 
-            // 3. Collection Summary & Preview (Max 3 stamps preview)
+            // 3. Collection Summary & Preview (Compact, Scalable, Fixed Height)
             item {
                 Card(
                     modifier = Modifier
@@ -205,65 +208,89 @@ fun HomeScreen(
                                 )
                             }
 
+                            val stampCountText = when (stamps.size) {
+                                1 -> "1 Stamp"
+                                else -> "${stamps.size} Stamps"
+                            }
                             Text(
-                                text = "${stamps.size} ${if (stamps.size == 1) "Stamp" else "Stamps"}",
+                                text = stampCountText,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Terracotta
+                                color = Terracotta,
+                                modifier = Modifier.testTag("collection_stamps_count_text")
                             )
                         }
 
                         Spacer(modifier = Modifier.height(Spacing.md))
 
                         if (stamps.isEmpty()) {
-                            // Warm empty state
+                            // Warm, compact empty state
                             EmptyStateView(
                                 emoji = "🧭",
-                                title = "Your passport is still empty",
-                                subtitle = "Start your first journey and earn your first official Travel Stamp."
+                                title = "Your passport is waiting",
+                                subtitle = "Complete your first journey to earn a Travel Stamp.",
+                                actionText = "START YOUR FIRST JOURNEY",
+                                onActionClick = onCreateTripClick
                             )
                         } else {
-                            // Stamp preview (Max 3 stamps for clean balanced layout)
-                            val displayStamps = stamps.take(3)
+                            // Scalable Stamp preview (Max HOME_COLLECTION_PREVIEW_LIMIT + More indicator)
+                            val displayStamps = stamps.take(HOME_COLLECTION_PREVIEW_LIMIT)
+                            val remainingCount = stamps.size - displayStamps.size
+
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                                modifier = Modifier.fillMaxWidth()
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("home_stamp_preview_row")
                             ) {
-                                items(displayStamps) { stamp ->
+                                items(displayStamps, key = { it.id }) { stamp ->
                                     CompactStampBadge(
                                         stamp = stamp,
-                                        modifier = Modifier.clickable {
-                                            onStampClick(stamp.tripId)
-                                        }
+                                        modifier = Modifier
+                                            .size(76.dp)
+                                            .clickable {
+                                                onStampClick(stamp.tripId)
+                                            }
                                     )
                                 }
+
+                                if (remainingCount > 0) {
+                                    item(key = "more_stamps_indicator") {
+                                        MoreStampsIndicator(
+                                            remainingCount = remainingCount,
+                                            onClick = onCollectionClick
+                                        )
+                                    }
+                                }
                             }
-                        }
 
-                        Spacer(modifier = Modifier.height(Spacing.md))
+                            Spacer(modifier = Modifier.height(Spacing.md))
 
-                        // View Full Collection Navigation link
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onCollectionClick() }
-                                .padding(vertical = Spacing.xs),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (stamps.size > 3) "View Full Collection (${stamps.size}) →" else "Open Passport Book →",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ArrowForward,
-                                contentDescription = "Open Collection",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            // View Full Collection Navigation link
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onCollectionClick() }
+                                    .padding(vertical = Spacing.xs)
+                                    .testTag("view_full_collection_button"),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (stamps.size > 1) "VIEW FULL COLLECTION (${stamps.size}) →" else "VIEW FULL COLLECTION →",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowForward,
+                                    contentDescription = "Open Collection",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }

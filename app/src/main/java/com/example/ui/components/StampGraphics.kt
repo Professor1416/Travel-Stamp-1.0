@@ -620,3 +620,51 @@ fun CompactStampBadge(
         }
     }
 }
+
+/**
+ * Elegant indicator for remaining stamps beyond the home dashboard preview limit.
+ * Styled as a distinguished passport counter badge.
+ */
+@Composable
+fun MoreStampsIndicator(
+    remainingCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(76.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
+            .border(1.5.dp, OchreGold.copy(alpha = 0.5f), CircleShape)
+            .clickable(onClick = onClick)
+            .testTag("more_stamps_indicator"),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(4.dp)
+        ) {
+            Text(
+                text = "+$remainingCount",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = Terracotta,
+                fontSize = 15.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "MORE",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 9.sp,
+                maxLines = 1
+            )
+        }
+    }
+}

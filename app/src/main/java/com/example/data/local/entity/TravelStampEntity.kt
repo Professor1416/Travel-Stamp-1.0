@@ -40,6 +40,7 @@ data class TravelStampEntity(
     val inspectionText: String = "OFFICIALLY LOGGED • CERTIFIED JOURNEY",
     val issuedAt: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
     val deletedAt: Long? = null,
     val reflectionNote: String? = null
@@ -60,6 +61,7 @@ data class TravelStampEntity(
         inspectionText = inspectionText,
         issuedAt = issuedAt,
         createdAt = createdAt,
+        updatedAt = updatedAt,
         completedAt = completedAt,
         deletedAt = deletedAt,
         reflectionNote = reflectionNote
@@ -82,6 +84,7 @@ data class TravelStampEntity(
             inspectionText = stamp.inspectionText,
             issuedAt = stamp.issuedAt,
             createdAt = stamp.createdAt,
+            updatedAt = stamp.updatedAt,
             completedAt = stamp.completedAt,
             deletedAt = stamp.deletedAt,
             reflectionNote = stamp.reflectionNote
