@@ -49,6 +49,7 @@ interface TravelStampRepository {
 
     suspend fun deleteStamp(id: Long)
     suspend fun updateStampMomentsCount(tripId: Long)
+    suspend fun correctOfficialJourneyDate(tripId: Long, newDate: String): Result<Boolean>
     fun getStampsCount(): Flow<Int>
     suspend fun getStampsCountSync(): Int
     suspend fun allocateNextStampNumber(): Long
@@ -157,6 +158,25 @@ class TravelStampRepositoryImpl(
     override suspend fun updateStampMomentsCount(tripId: Long) {
         withContext(Dispatchers.IO) {
             stampDao.updateStampMomentsCount(tripId)
+        }
+    }
+
+    override suspend fun correctOfficialJourneyDate(tripId: Long, newDate: String): Result<Boolean> {
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val cleanedDate = newDate.trim()
+                if (cleanedDate.isBlank()) {
+                    throw IllegalArgumentException("Date cannot be blank")
+                }
+                if (DateUtils.isFutureDate(cleanedDate)) {
+                    throw IllegalArgumentException("Official journey date cannot be set to a future date")
+                }
+                val success = stampDao.correctOfficialJourneyDate(tripId, cleanedDate)
+                if (!success) {
+                    throw IllegalStateException("Failed to update journey date or stamp record not found for tripId $tripId")
+                }
+                true
+            }
         }
     }
 

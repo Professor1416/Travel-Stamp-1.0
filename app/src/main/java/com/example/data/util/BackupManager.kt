@@ -410,7 +410,7 @@ object BackupManager {
             val tripDate = obj.getString("date")
             val isFuture = DateUtils.isFutureDate(tripDate)
             val rawStatus = obj.optString("status", "UPCOMING")
-            val isCompleted = rawStatus == "COMPLETED" && !isFuture
+            val isCompleted = rawStatus == "COMPLETED"
 
             val existingTrip = existingTrips.firstOrNull { it.uuid == tripUuid }
 
@@ -518,8 +518,9 @@ object BackupManager {
             val newTripId = oldToNewTripIdMap[oldTripId] ?: continue
             val dateText = obj.getString("dateText")
 
-            // Business logic: Do not import stamps for future trips
-            if (DateUtils.isFutureDate(dateText)) {
+            val targetTrip = database.tripDao().getTripByIdSync(newTripId)
+            // Safety check: Only skip if trip is not completed and date is strictly in the future
+            if (targetTrip?.status != "COMPLETED" && DateUtils.isFutureDate(dateText)) {
                 continue
             }
 

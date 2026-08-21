@@ -3238,6 +3238,1159 @@ class ExampleRobolectricTest {
         )
         assertEquals(60, sortedLarge.size)
     }
+
+    @Test
+    fun `verify collected passport stamps grid layout mapping and partitioning`() = runBlocking {
+        // 1. Create multiple completed trips with stamps in Room database
+        val trip1Id = db.tripDao().insertTrip(
+            TripEntity(name = "Torna Fort", destination = "Velhe, Pune", date = "10 Aug 2026", status = "COMPLETED")
+        )
+        val stamp1 = stampRepo.issueOfficialStampForTrip(
+            tripId = trip1Id,
+            title = "Torna Fort",
+            destination = "Velhe, Pune",
+            dateText = "10 Aug 2026",
+            peopleCount = 4,
+            momentsCount = 3,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = "First fort conquered by Shivaji Maharaj",
+            completedAt = System.currentTimeMillis()
+        )
+        assertNotNull(stamp1)
+
+        val trip2Id = db.tripDao().insertTrip(
+            TripEntity(name = "Rajgad Fort", destination = "Gunjavane, Pune", date = "12 Aug 2026", status = "COMPLETED")
+        )
+        val stamp2 = stampRepo.issueOfficialStampForTrip(
+            tripId = trip2Id,
+            title = "Rajgad Fort",
+            destination = "Gunjavane, Pune",
+            dateText = "12 Aug 2026",
+            peopleCount = 3,
+            momentsCount = 5,
+            inkColorHex = "#C85A32",
+            stampStyle = "EXPEDITION",
+            reflectionNote = "King of forts",
+            completedAt = System.currentTimeMillis()
+        )
+        assertNotNull(stamp2)
+
+        val trip3Id = db.tripDao().insertTrip(
+            TripEntity(name = "Sinhagad Fort", destination = "Donaje, Pune", date = "14 Aug 2026", status = "COMPLETED")
+        )
+        val stamp3 = stampRepo.issueOfficialStampForTrip(
+            tripId = trip3Id,
+            title = "Sinhagad Fort",
+            destination = "Donaje, Pune",
+            dateText = "14 Aug 2026",
+            peopleCount = 2,
+            momentsCount = 2,
+            inkColorHex = "#B07D46",
+            stampStyle = "COMPASS",
+            reflectionNote = "Lion's Fort",
+            completedAt = System.currentTimeMillis()
+        )
+        assertNotNull(stamp3)
+
+        // 2. Fetch stamps from Room database flow
+        val allStamps = stampRepo.getAllStamps().first()
+        assertEquals(3, allStamps.size)
+
+        // 3. Verify grid 2-column chunking partitioning (stamps ordered DESC by stamp number: #003, #002, #001)
+        val gridChunks = allStamps.chunked(2)
+        assertEquals(2, gridChunks.size)
+        // Row 1 has 2 stamps (#003 Sinhagad Fort, #002 Rajgad Fort)
+        assertEquals(2, gridChunks[0].size)
+        assertEquals("#003", gridChunks[0][0].stampCode)
+        assertEquals("Sinhagad Fort", gridChunks[0][0].title)
+        assertEquals("#002", gridChunks[0][1].stampCode)
+        assertEquals("Rajgad Fort", gridChunks[0][1].title)
+
+        // Row 2 has 1 stamp (#001 Torna Fort)
+        assertEquals(1, gridChunks[1].size)
+        assertEquals("#001", gridChunks[1][0].stampCode)
+        assertEquals("Torna Fort", gridChunks[1][0].title)
+
+        // 4. Verify stamp metadata required for passport grid rendering
+        val firstStamp = gridChunks[0][0]
+        assertEquals("14 Aug 2026", firstStamp.dateText)
+        assertEquals(2, firstStamp.momentsCount)
+        assertEquals("#B07D46", firstStamp.inkColorHex)
+        assertEquals("COMPASS", firstStamp.stampStyle)
+        assertEquals("Lion's Fort", firstStamp.reflectionNote)
+    }
+
+    // ==========================================
+    // GitHub Issue #4: Relational Integrity Tests A through H
+    // ==========================================
+
+    @Test
+    fun `TEST A - Create Trip, add checklist, add moment, finish trip, generate stamp, verify all relationships`() = runBlocking {
+        // 1. Create Trip
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Korigad Trek", destination = "Aamby Valley, Lonavala", date = "15 Aug 2026", peopleCount = 3)
+        )
+        assertTrue(tripId > 0)
+
+        // 2. Add Checklist items
+        val checkId1 = checklistRepo.addCustomItem(tripId, "Water Bottle")
+        val checkId2 = checklistRepo.addCustomItem(tripId, "First Aid Kit")
+        assertTrue(checkId1 > 0)
+        assertTrue(checkId2 > 0)
+
+        // 3. Add Moments
+        val momentId1 = momentRepo.addMoment(
+            Moment(tripId = tripId, category = MomentCategory.CHAI, note = "Ginger tea at base village")
+        )
+        val momentId2 = momentRepo.addMoment(
+            Moment(tripId = tripId, category = MomentCategory.VIEW, note = "Misty fortress plateau view")
+        )
+        assertTrue(momentId1 > 0)
+        assertTrue(momentId2 > 0)
+
+        // 4. Finish Trip & issue stamp
+        val stamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Korigad Trek",
+            destination = "Aamby Valley, Lonavala",
+            dateText = "15 Aug 2026",
+            peopleCount = 3,
+            momentsCount = 2,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = "Lush green monsoon hike"
+        ).getOrThrow()
+
+        // 5. Reopen trip and verify relationships
+        val retrievedTrip = tripRepo.getTripByIdSync(tripId)
+        assertNotNull(retrievedTrip)
+        assertEquals(TripStatus.COMPLETED, retrievedTrip!!.status)
+        assertTrue(retrievedTrip.stampEarned)
+
+        val retrievedChecklist = checklistRepo.getItemsForTrip(tripId).first()
+        assertEquals(2, retrievedChecklist.size)
+        assertTrue(retrievedChecklist.all { it.tripId == tripId })
+
+        val retrievedMoments = momentRepo.getMomentsForTrip(tripId).first()
+        assertEquals(2, retrievedMoments.size)
+        assertTrue(retrievedMoments.all { it.tripId == tripId })
+
+        val retrievedStamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(retrievedStamp)
+        assertEquals(stamp.id, retrievedStamp!!.id)
+        assertEquals(tripId, retrievedStamp.tripId)
+        assertEquals(stamp.stampNumber, retrievedStamp.stampNumber)
+    }
+
+    @Test
+    fun `TEST B - Finish Trip, add another Moment afterward, View Official Travel Stamp opens same stamp`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Lohagad Fort", destination = "Malavli, Pune", date = "10 Aug 2026")
+        )
+        momentRepo.addMoment(Moment(tripId = tripId, category = MomentCategory.NOTE, note = "Before climb"))
+
+        val initialStamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Lohagad Fort",
+            destination = "Malavli, Pune",
+            dateText = "10 Aug 2026",
+            peopleCount = 2,
+            momentsCount = 1,
+            inkColorHex = "#C85A32",
+            stampStyle = "EXPEDITION",
+            reflectionNote = "Iron fort"
+        ).getOrThrow()
+
+        // Add Moment after trip completion
+        val newMomentId = momentRepo.addMoment(
+            Moment(tripId = tripId, category = MomentCategory.RAIN, note = "Heavy downpour at Vinchukata after summiting")
+        )
+        assertTrue(newMomentId > 0)
+        stampRepo.updateStampMomentsCount(tripId)
+
+        // View Stamp: Must retrieve exact same stamp with same ID and stampNumber
+        val reopenedStamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(reopenedStamp)
+        assertEquals(initialStamp.id, reopenedStamp!!.id)
+        assertEquals(initialStamp.stampNumber, reopenedStamp.stampNumber)
+        assertEquals(initialStamp.stampCode, reopenedStamp.stampCode)
+        // Moments count updated to 2
+        assertEquals(2, reopenedStamp.momentsCount)
+    }
+
+    @Test
+    fun `TEST C - Repeatedly open View Stamp must never create another stamp`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Visapur Fort", destination = "Malavli, Pune", date = "12 Aug 2026")
+        )
+        val firstStamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Visapur Fort",
+            destination = "Malavli, Pune",
+            dateText = "12 Aug 2026",
+            peopleCount = 1,
+            momentsCount = 0,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = "Waterfall trail"
+        ).getOrThrow()
+
+        val countBefore = stampRepo.getStampsCountSync()
+
+        // Simulate viewing / querying stamp 10 times
+        for (i in 1..10) {
+            val retrieved = stampRepo.getStampForTripSync(tripId)
+            assertNotNull(retrieved)
+            assertEquals(firstStamp.id, retrieved!!.id)
+            assertEquals(firstStamp.stampNumber, retrieved.stampNumber)
+
+            // Even if an idempotent issue is triggered again:
+            val reissued = stampRepo.completeTripAndIssueStamp(
+                tripId = tripId,
+                title = "Visapur Fort",
+                destination = "Malavli, Pune",
+                dateText = "12 Aug 2026",
+                peopleCount = 1,
+                momentsCount = 0,
+                inkColorHex = "#1E3A2F",
+                stampStyle = "MOUNTAIN",
+                reflectionNote = "Waterfall trail"
+            ).getOrThrow()
+            assertEquals(firstStamp.id, reissued.id)
+            assertEquals(firstStamp.stampNumber, reissued.stampNumber)
+        }
+
+        val countAfter = stampRepo.getStampsCountSync()
+        assertEquals(countBefore, countAfter)
+    }
+
+    @Test
+    fun `TEST D - Delete a Moment, Trip and Stamp must remain intact`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Tikona Fort", destination = "Kamshet, Pune", date = "14 Aug 2026")
+        )
+        val moment1Id = momentRepo.addMoment(Moment(tripId = tripId, category = MomentCategory.CHAI, note = "Chai"))
+        val moment2Id = momentRepo.addMoment(Moment(tripId = tripId, category = MomentCategory.VIEW, note = "View"))
+
+        val stamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Tikona Fort",
+            destination = "Kamshet, Pune",
+            dateText = "14 Aug 2026",
+            peopleCount = 2,
+            momentsCount = 2,
+            inkColorHex = "#B07D46",
+            stampStyle = "COMPASS",
+            reflectionNote = "Triangular fort"
+        ).getOrThrow()
+
+        // Delete moment 1
+        momentRepo.deleteMoment(moment1Id)
+        stampRepo.updateStampMomentsCount(tripId)
+
+        // Trip and stamp must remain
+        val trip = tripRepo.getTripByIdSync(tripId)
+        assertNotNull(trip)
+        assertEquals(TripStatus.COMPLETED, trip!!.status)
+
+        val retrievedStamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(retrievedStamp)
+        assertEquals(stamp.id, retrievedStamp!!.id)
+        assertEquals(1, retrievedStamp.momentsCount)
+
+        val remainingMoments = momentRepo.getMomentsForTripSync(tripId)
+        assertEquals(1, remainingMoments.size)
+        assertEquals(moment2Id, remainingMoments[0].id)
+    }
+
+    @Test
+    fun `TEST E - Delete a checklist item, Trip Moments and Stamp must remain intact`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Purandar Fort", destination = "Saswad, Pune", date = "16 Aug 2026")
+        )
+        val checkId = checklistRepo.addCustomItem(tripId, "Extra Socks")
+        val momentId = momentRepo.addMoment(Moment(tripId = tripId, category = MomentCategory.NOTE, note = "Base"))
+        val stamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Purandar Fort",
+            destination = "Saswad, Pune",
+            dateText = "16 Aug 2026",
+            peopleCount = 1,
+            momentsCount = 1,
+            inkColorHex = "#8B1E28",
+            stampStyle = "EXPEDITION",
+            reflectionNote = "Historic bastion"
+        ).getOrThrow()
+
+        // Delete checklist item
+        checklistRepo.deleteItem(checkId)
+
+        // Verify remaining
+        val trip = tripRepo.getTripByIdSync(tripId)
+        assertNotNull(trip)
+        val moments = momentRepo.getMomentsForTripSync(tripId)
+        assertEquals(1, moments.size)
+        assertEquals(momentId, moments[0].id)
+        val retrievedStamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(retrievedStamp)
+        assertEquals(stamp.id, retrievedStamp!!.id)
+    }
+
+    @Test
+    fun `TEST F - Delete a Trip cascade deletes its dependent records with no orphan rows`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Trek to Delete", destination = "Western Ghats", date = "18 Aug 2026")
+        )
+        val checkId = checklistRepo.addCustomItem(tripId, "Energy Bars")
+        val momentId = momentRepo.addMoment(Moment(tripId = tripId, category = MomentCategory.NOTE, note = "Note to delete"))
+        val stamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Trek to Delete",
+            destination = "Western Ghats",
+            dateText = "18 Aug 2026",
+            peopleCount = 2,
+            momentsCount = 1,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = "Temp"
+        ).getOrThrow()
+
+        // Verify all exist before deletion
+        assertNotNull(tripRepo.getTripByIdSync(tripId))
+        assertEquals(1, checklistRepo.getItemsForTrip(tripId).first().size)
+        assertEquals(1, momentRepo.getMomentsForTripSync(tripId).size)
+        assertNotNull(stampRepo.getStampForTripSync(tripId))
+
+        // Delete Trip
+        tripRepo.deleteTrip(tripId)
+
+        // Verify cascade deletion - No orphan rows remain in any child table
+        assertNull(tripRepo.getTripByIdSync(tripId))
+        assertEquals(0, checklistRepo.getItemsForTrip(tripId).first().size)
+        assertEquals(0, momentRepo.getMomentsForTripSync(tripId).size)
+        assertNull(stampRepo.getStampForTripSync(tripId))
+    }
+
+    @Test
+    fun `TEST G - Backup and restore data preserves all Trip Moment Checklist and Stamp relationships`() = runBlocking {
+        // 1. Create a trip with checklist, moments, and stamp
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Raigad Fort", destination = "Mahad, Raigad", date = "01 Aug 2026", peopleCount = 5)
+        )
+        checklistRepo.addCustomItem(tripId, "Tent")
+        momentRepo.addMoment(Moment(tripId = tripId, category = MomentCategory.MEMORY, note = "Capital of Swarajya"))
+        val stamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Raigad Fort",
+            destination = "Mahad, Raigad",
+            dateText = "01 Aug 2026",
+            peopleCount = 5,
+            momentsCount = 1,
+            inkColorHex = "#C85A32",
+            stampStyle = "EXPEDITION",
+            reflectionNote = "Magnificent capital"
+        ).getOrThrow()
+
+        // 2. Generate JSON backup
+        val backupJson = BackupManager.generateBackupJson(db)
+        assertTrue(backupJson.contains("Raigad Fort"))
+        assertTrue(backupJson.contains("Capital of Swarajya"))
+
+        // 3. Clear database to simulate fresh restore
+        tripRepo.deleteTrip(tripId)
+        assertNull(tripRepo.getTripByIdSync(tripId))
+
+        // 4. Restore from JSON backup
+        val importResult = BackupManager.importBackupJson(db, backupJson).getOrThrow()
+        assertTrue(importResult.importedTrips >= 1)
+        assertTrue(importResult.importedStamps >= 1)
+
+        // 5. Verify restored relationships
+        val restoredTrips = tripRepo.getAllTrips().first()
+        val restoredTrip = restoredTrips.firstOrNull { it.name == "Raigad Fort" }
+        assertNotNull(restoredTrip)
+        assertEquals(TripStatus.COMPLETED, restoredTrip!!.status)
+
+        val restoredChecklist = checklistRepo.getItemsForTrip(restoredTrip.id).first()
+        assertEquals(1, restoredChecklist.size)
+        assertEquals("Tent", restoredChecklist[0].text)
+
+        val restoredMoments = momentRepo.getMomentsForTrip(restoredTrip.id).first()
+        assertEquals(1, restoredMoments.size)
+        assertEquals("Capital of Swarajya", restoredMoments[0].note)
+
+        val restoredStamp = stampRepo.getStampForTripSync(restoredTrip.id)
+        assertNotNull(restoredStamp)
+        assertEquals(restoredTrip.id, restoredStamp!!.tripId)
+        assertEquals(stamp.stampNumber, restoredStamp.stampNumber)
+        assertEquals(stamp.stampCode, restoredStamp.stampCode)
+    }
+
+    @Test
+    fun `TEST H - Reopen completed trips across database sessions preserves all relationships`() = runBlocking {
+        // 1. Create and finish a trip
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Harishchandragad", destination = "Khireshwar, Ahmednagar", date = "05 Aug 2026", peopleCount = 4)
+        )
+        momentRepo.addMoment(Moment(tripId = tripId, category = MomentCategory.VIEW, note = "Kokankada cliff drop"))
+        val originalStamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Harishchandragad",
+            destination = "Khireshwar, Ahmednagar",
+            dateText = "05 Aug 2026",
+            peopleCount = 4,
+            momentsCount = 1,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = "Cliff edge in the clouds"
+        ).getOrThrow()
+
+        // 2. Query completed trips list
+        val completedList = tripRepo.getCompletedTrips().first()
+        val completedTrip = completedList.firstOrNull { it.id == tripId }
+        assertNotNull(completedTrip)
+        assertEquals(TripStatus.COMPLETED, completedTrip!!.status)
+        assertTrue(completedTrip.stampEarned)
+
+        // 3. Query stamp by trip ID (the stable foreign key)
+        val stampForTrip = stampRepo.getStampForTrip(tripId).first()
+        assertNotNull(stampForTrip)
+        assertEquals(originalStamp.id, stampForTrip!!.id)
+        assertEquals(originalStamp.stampCode, stampForTrip.stampCode)
+        assertEquals(tripId, stampForTrip.tripId)
+    }
+
+    // ==========================================
+    // GitHub Issue #5: Official Stamp Date Architecture Tests
+    // ==========================================
+
+    @Test
+    fun `ISSUE 5 - TEST 1 Upcoming trip date is normally editable`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Kalavantin Durg", destination = "Panvel", date = "25 Dec 2026", peopleCount = 2)
+        )
+        val initial = tripRepo.getTripByIdSync(tripId)
+        assertNotNull(initial)
+        assertEquals(TripStatus.UPCOMING, initial!!.status)
+        assertEquals("25 Dec 2026", initial.date)
+
+        // Normal update allows changing upcoming trip date
+        vm.updateTrip(
+            tripId = tripId,
+            name = "Kalavantin Durg",
+            destination = "Panvel",
+            date = "28 Dec 2026",
+            peopleCount = 2,
+            description = "Rescheduled trek"
+        )
+
+        var attempts = 0
+        while (tripRepo.getTripByIdSync(tripId)?.date != "28 Dec 2026" && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val updated = tripRepo.getTripByIdSync(tripId)
+        assertNotNull(updated)
+        assertEquals("28 Dec 2026", updated!!.date)
+        assertEquals("Rescheduled trek", updated.description)
+    }
+
+    @Test
+    fun `ISSUE 5 - TEST 2 Completed stamped trip date cannot be casually modified via normal updateTrip`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Dehergad Fort", destination = "Nashik", date = "16 August 2026", peopleCount = 2)
+        )
+        stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Dehergad Fort",
+            destination = "Nashik",
+            dateText = "16 August 2026",
+            peopleCount = 2,
+            momentsCount = 0,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = "Historic trek"
+        ).getOrThrow()
+
+        val completedTrip = tripRepo.getTripByIdSync(tripId)
+        assertNotNull(completedTrip)
+        assertEquals(TripStatus.COMPLETED, completedTrip!!.status)
+        assertTrue(completedTrip.stampEarned)
+
+        // Normal edit attempt trying to casually alter date
+        vm.updateTrip(
+            tripId = tripId,
+            name = "Dehergad Fort (Updated Title)",
+            destination = "Nashik Valley",
+            date = "01 January 2020", // Casual attempt to change date
+            peopleCount = 3,
+            description = "Updated notes"
+        )
+
+        var attempts = 0
+        while (tripRepo.getTripByIdSync(tripId)?.name != "Dehergad Fort (Updated Title)" && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val afterEdit = tripRepo.getTripByIdSync(tripId)
+        assertNotNull(afterEdit)
+        // Title, destination, people count and description updated
+        assertEquals("Dehergad Fort (Updated Title)", afterEdit!!.name)
+        assertEquals("Nashik Valley", afterEdit.destination)
+        assertEquals(3, afterEdit.peopleCount)
+        assertEquals("Updated notes", afterEdit.description)
+        // Date remains protected at original official date
+        assertEquals("16 August 2026", afterEdit.date)
+
+        val stamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(stamp)
+        assertEquals("16 August 2026", stamp!!.dateText)
+    }
+
+    @Test
+    fun `ISSUE 5 - TEST 3 Correct Journey Date atomically updates Trip and Stamp while preserving stamp identity`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Dehergad", destination = "Nashik", date = "16 August 2026", peopleCount = 2)
+        )
+        val initialStamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Dehergad",
+            destination = "Nashik",
+            dateText = "16 August 2026",
+            peopleCount = 2,
+            momentsCount = 0,
+            inkColorHex = "#243642",
+            stampStyle = "EXPEDITION",
+            reflectionNote = "Ancient bastion"
+        ).getOrThrow()
+
+        val originalStampNumber = initialStamp.stampNumber
+        val originalStampCode = initialStamp.stampCode
+        val originalStampUuid = initialStamp.uuid
+        val originalIssuedAt = initialStamp.issuedAt
+        val originalStampId = initialStamp.id
+
+        // Deliberate controlled correction: 16 August 2026 -> 17 August 2026
+        val correctionResult = stampRepo.correctOfficialJourneyDate(tripId, "17 August 2026")
+        assertTrue(correctionResult.isSuccess)
+
+        // Verify Trip official date updated
+        val updatedTrip = tripRepo.getTripByIdSync(tripId)
+        assertNotNull(updatedTrip)
+        assertEquals("17 August 2026", updatedTrip!!.date)
+        assertEquals(TripStatus.COMPLETED, updatedTrip.status)
+
+        // Verify Stamp official dateText updated
+        val updatedStamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(updatedStamp)
+        assertEquals("17 August 2026", updatedStamp!!.dateText)
+
+        // Verify all stamp identity properties are 100% PRESERVED
+        assertEquals(originalStampId, updatedStamp.id)
+        assertEquals(originalStampNumber, updatedStamp.stampNumber)
+        assertEquals(originalStampCode, updatedStamp.stampCode)
+        assertEquals(originalStampUuid, updatedStamp.uuid)
+        assertEquals(originalIssuedAt, updatedStamp.issuedAt)
+        assertEquals(initialStamp.inkColorHex, updatedStamp.inkColorHex)
+        assertEquals(initialStamp.stampStyle, updatedStamp.stampStyle)
+        assertEquals(initialStamp.reflectionNote, updatedStamp.reflectionNote)
+    }
+
+    @Test
+    fun `ISSUE 5 - TEST 4 Date correction validation rejects blank and future dates for completed journeys`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Torna Fort", destination = "Velhe, Pune", date = "10 Aug 2026")
+        )
+        stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Torna Fort",
+            destination = "Velhe, Pune",
+            dateText = "10 Aug 2026",
+            peopleCount = 2,
+            momentsCount = 0,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = "Historic"
+        ).getOrThrow()
+
+        // 1. Blank date rejected
+        val blankResult = stampRepo.correctOfficialJourneyDate(tripId, "   ")
+        assertTrue(blankResult.isFailure)
+
+        // 2. Future date rejected for completed journey
+        val futureResult = stampRepo.correctOfficialJourneyDate(tripId, "01 Jan 2099")
+        assertTrue(futureResult.isFailure)
+
+        // Trip and stamp dates remain untouched
+        val trip = tripRepo.getTripByIdSync(tripId)
+        val stamp = stampRepo.getStampForTripSync(tripId)
+        assertEquals("10 Aug 2026", trip!!.date)
+        assertEquals("10 Aug 2026", stamp!!.dateText)
+    }
+
+    @Test
+    fun `ISSUE 5 - TEST 5 Multiple date corrections do not allocate new stamp numbers or sequence`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Rajmachi Fort", destination = "Udhewadi, Lonavala", date = "01 Aug 2026")
+        )
+        val originalStamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Rajmachi Fort",
+            destination = "Udhewadi, Lonavala",
+            dateText = "01 Aug 2026",
+            peopleCount = 2,
+            momentsCount = 0,
+            inkColorHex = "#B07D46",
+            stampStyle = "COMPASS",
+            reflectionNote = "Twin forts"
+        ).getOrThrow()
+
+        val initialTotalStamps = stampRepo.getStampsCountSync()
+
+        // Correct date 5 times sequentially
+        val dates = listOf("02 Aug 2026", "03 Aug 2026", "04 Aug 2026", "05 Aug 2026", "06 Aug 2026")
+        for (d in dates) {
+            val res = stampRepo.correctOfficialJourneyDate(tripId, d)
+            assertTrue(res.isSuccess)
+        }
+
+        val finalTotalStamps = stampRepo.getStampsCountSync()
+        assertEquals(initialTotalStamps, finalTotalStamps)
+
+        val finalStamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(finalStamp)
+        assertEquals("06 Aug 2026", finalStamp!!.dateText)
+        assertEquals(originalStamp.id, finalStamp.id)
+        assertEquals(originalStamp.stampNumber, finalStamp.stampNumber)
+        assertEquals(originalStamp.stampCode, finalStamp.stampCode)
+    }
+
+    @Test
+    fun `ISSUE 5 - TEST 6 Collection and recent journeys chronological ordering respects corrected dates`() = runBlocking {
+        val tripId1 = tripRepo.createTrip(
+            Trip(name = "Trip Older", destination = "Dest A", date = "01 Aug 2026")
+        )
+        stampRepo.completeTripAndIssueStamp(
+            tripId1, "Trip Older", "Dest A", "01 Aug 2026", 1, 0, "#1E3A2F", "MOUNTAIN", null
+        ).getOrThrow()
+
+        val tripId2 = tripRepo.createTrip(
+            Trip(name = "Trip Newer", destination = "Dest B", date = "10 Aug 2026")
+        )
+        stampRepo.completeTripAndIssueStamp(
+            tripId2, "Trip Newer", "Dest B", "10 Aug 2026", 1, 0, "#C85A32", "EXPEDITION", null
+        ).getOrThrow()
+
+        // Initial completed trips order (descending by event date: Trip Newer 10 Aug, then Trip Older 01 Aug)
+        val initialCompleted = tripRepo.getCompletedTrips().first()
+        assertEquals("Trip Newer", initialCompleted[0].name)
+        assertEquals("Trip Older", initialCompleted[1].name)
+
+        // Correct Trip Older's date to 20 Aug 2026 (making it newer than Trip Newer)
+        stampRepo.correctOfficialJourneyDate(tripId1, "20 Aug 2026")
+
+        // Verified reactive flow updates completed trips ordering
+        val afterCorrectionCompleted = tripRepo.getCompletedTrips().first()
+        assertEquals("Trip Older", afterCorrectionCompleted[0].name)
+        assertEquals("20 Aug 2026", afterCorrectionCompleted[0].date)
+        assertEquals("Trip Newer", afterCorrectionCompleted[1].name)
+        assertEquals("10 Aug 2026", afterCorrectionCompleted[1].date)
+    }
+
+    @Test
+    fun `ISSUE 5 - TEST 7 Backup and restore retains corrected official journey date for both Trip and Stamp`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Pratapgad", destination = "Mahabaleshwar", date = "05 Aug 2026", peopleCount = 3)
+        )
+        val stamp = stampRepo.completeTripAndIssueStamp(
+            tripId, "Pratapgad", "Mahabaleshwar", "05 Aug 2026", 3, 0, "#1B4965", "TEAL", "Historic fort"
+        ).getOrThrow()
+
+        // Correct date
+        stampRepo.correctOfficialJourneyDate(tripId, "08 Aug 2026")
+
+        // Generate JSON Backup
+        val backupJson = BackupManager.generateBackupJson(db)
+        assertTrue(backupJson.contains("08 Aug 2026"))
+
+        // Delete from local DB
+        tripRepo.deleteTrip(tripId)
+        assertNull(tripRepo.getTripByIdSync(tripId))
+
+        // Import Backup
+        BackupManager.importBackupJson(db, backupJson).getOrThrow()
+
+        val restoredTrips = tripRepo.getAllTrips().first()
+        val restoredTrip = restoredTrips.firstOrNull { it.name == "Pratapgad" }
+        assertNotNull(restoredTrip)
+        assertEquals("08 Aug 2026", restoredTrip!!.date)
+
+        val restoredStamp = stampRepo.getStampForTripSync(restoredTrip.id)
+        assertNotNull(restoredStamp)
+        assertEquals("08 Aug 2026", restoredStamp!!.dateText)
+        assertEquals(stamp.stampNumber, restoredStamp.stampNumber)
+    }
+
+    // ==========================================
+    // GitHub Issue #12: Finish Trip and Stamp Generation UX & Concurrency Tests
+    // ==========================================
+
+    @Test
+    fun `ISSUE 12 - TEST 1 Single Finish action generates exactly one official stamp`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Harishchandragad", destination = "Ahmednagar", date = "10 Aug 2026", peopleCount = 4)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        var finishedTripId: Long? = null
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Cliffhanger summit view",
+            stampInkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            onFinished = { finishedTripId = it }
+        )
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val state = vm.finishTripUiState.value
+        assertTrue(state is FinishTripUiState.Success)
+        val successState = state as FinishTripUiState.Success
+        assertEquals(tripId, successState.tripId)
+        assertEquals(tripId, finishedTripId)
+
+        val totalStamps = stampRepo.getStampsCountSync()
+        assertEquals(1, totalStamps)
+
+        val stamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(stamp)
+        assertEquals(1L, stamp!!.stampNumber)
+        assertEquals("#001", stamp.stampCode)
+        assertEquals("Harishchandragad", stamp.title)
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 2 Rapid concurrent Finish invocations yield exactly one stamp`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Rajgad Fort", destination = "Pune", date = "12 Aug 2026", peopleCount = 3)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        // Rapidly trigger finishTrip 10 times concurrently
+        repeat(10) {
+            vm.finishTrip(
+                tripId = tripId,
+                reflectionNote = "Rapid tap note $it",
+                stampInkColorHex = "#C85A32",
+                stampStyle = "EXPEDITION"
+            )
+        }
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        assertTrue(vm.finishTripUiState.value is FinishTripUiState.Success)
+        val totalStamps = stampRepo.getStampsCountSync()
+        assertEquals(1, totalStamps)
+
+        val allStamps = stampRepo.getAllStamps().first()
+        assertEquals(1, allStamps.size)
+        assertEquals(tripId, allStamps.first().tripId)
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 3 State machine transitions from Idle to Loading to Success`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Sinhagad Fort", destination = "Pune", date = "14 Aug 2026", peopleCount = 2)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        assertEquals(FinishTripUiState.Idle, vm.finishTripUiState.value)
+
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Monsoon clouds",
+            stampInkColorHex = "#243642",
+            stampStyle = "PINE"
+        )
+
+        // Wait for completion
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        assertTrue(vm.finishTripUiState.value is FinishTripUiState.Success)
+        val success = vm.finishTripUiState.value as FinishTripUiState.Success
+        assertEquals(tripId, success.tripId)
+        assertEquals("#001", success.stamp.stampCode)
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 4 Success UI state presents correct stamp code and metadata`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Torna Fort", destination = "Pune", date = "05 Aug 2026", peopleCount = 5)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "First fort conquered by Shivaji Maharaj",
+            stampInkColorHex = "#8B1E28",
+            stampStyle = "EXPEDITION"
+        )
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val successState = vm.finishTripUiState.value as FinishTripUiState.Success
+        assertEquals("#001", successState.stamp.stampCode)
+        assertEquals("Torna Fort", successState.stamp.title)
+        assertEquals("#8B1E28", successState.stamp.inkColorHex)
+        assertEquals("EXPEDITION", successState.stamp.stampStyle)
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 5 View Stamp transitions state cleanly without stamp re-generation`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Korigad", destination = "Aamby Valley", date = "08 Aug 2026", peopleCount = 2)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Lakes on top",
+            stampInkColorHex = "#B07D46",
+            stampStyle = "COMPASS"
+        )
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val initialStamp = (vm.finishTripUiState.value as FinishTripUiState.Success).stamp
+
+        // Simulate user clicking VIEW STAMP
+        vm.resetFinishTripState()
+        assertEquals(FinishTripUiState.Idle, vm.finishTripUiState.value)
+
+        val finalStamp = stampRepo.getStampForTripSync(tripId)
+        assertNotNull(finalStamp)
+        assertEquals(initialStamp.id, finalStamp!!.id)
+        assertEquals(initialStamp.stampCode, finalStamp.stampCode)
+        assertEquals(1, stampRepo.getStampsCountSync())
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 6 Future trip completion fails gracefully and exposes human-readable error state`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Future Expedition", destination = "Sahyadri", date = "01 Jan 2099", peopleCount = 2)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        var errorMessage: String? = null
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Will go in future",
+            stampInkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            onError = { errorMessage = it }
+        )
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Error && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val state = vm.finishTripUiState.value
+        assertTrue(state is FinishTripUiState.Error)
+        val errorState = state as FinishTripUiState.Error
+        assertTrue(errorState.message.contains("future", ignoreCase = true))
+        assertNotNull(errorMessage)
+        assertEquals(0, stampRepo.getStampsCountSync())
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 7 Safe retry after failure issues exactly one stamp`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Lohagad Fort", destination = "Lonavala", date = "02 Aug 2026", peopleCount = 4)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        // 1. Trigger failure with invalid non-existent trip id 99999L
+        vm.finishTrip(
+            tripId = 99999L,
+            reflectionNote = "Invalid trip",
+            stampInkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN"
+        )
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Error && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+        assertTrue(vm.finishTripUiState.value is FinishTripUiState.Error)
+
+        // 2. Retry with valid trip id
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Iron fort",
+            stampInkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN"
+        )
+
+        attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        assertTrue(vm.finishTripUiState.value is FinishTripUiState.Success)
+        assertEquals(1, stampRepo.getStampsCountSync())
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 8 Interrupted UI result retry returns existing stamp idempotently`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Visapur Fort", destination = "Malavli", date = "04 Aug 2026", peopleCount = 2)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        // Pre-create stamp in DB to simulate atomic DB commit before UI disconnection
+        val preCommittedStamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Visapur Fort",
+            destination = "Malavli",
+            dateText = "04 Aug 2026",
+            peopleCount = 2,
+            momentsCount = 0,
+            inkColorHex = "#3E2723",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = "Waterfall stairs"
+        ).getOrThrow()
+
+        // User retries finishTrip
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Waterfall stairs",
+            stampInkColorHex = "#3E2723",
+            stampStyle = "MOUNTAIN"
+        )
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val successState = vm.finishTripUiState.value as FinishTripUiState.Success
+        assertEquals(preCommittedStamp.id, successState.stamp.id)
+        assertEquals(preCommittedStamp.stampNumber, successState.stamp.stampNumber)
+        assertEquals(preCommittedStamp.stampCode, successState.stamp.stampCode)
+        assertEquals(1, stampRepo.getStampsCountSync())
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 9 Multiple finish calls while loading are rejected by concurrency guard`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Tikona Fort", destination = "Kamshet", date = "06 Aug 2026", peopleCount = 2)
+        )
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Triangle peak",
+            stampInkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN"
+        )
+
+        // Concurrent attempt immediately after
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Different note",
+            stampInkColorHex = "#C85A32",
+            stampStyle = "COMPASS"
+        )
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val successState = vm.finishTripUiState.value as FinishTripUiState.Success
+        assertEquals(1, stampRepo.getStampsCountSync())
+        // First note was used
+        assertEquals("Triangle peak", successState.stamp.reflectionNote)
+    }
+
+    @Test
+    fun `ISSUE 12 - TEST 10 Already completed trip cannot generate a secondary stamp`() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Ratangad", destination = "Bhandardara", date = "07 Aug 2026", peopleCount = 3)
+        )
+        val initialStamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Ratangad",
+            destination = "Bhandardara",
+            dateText = "07 Aug 2026",
+            peopleCount = 3,
+            momentsCount = 0,
+            inkColorHex = "#243642",
+            stampStyle = "EXPEDITION",
+            reflectionNote = "Nedhe eye hole"
+        ).getOrThrow()
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        // Attempt finish on already completed trip
+        vm.finishTrip(
+            tripId = tripId,
+            reflectionNote = "Duplicate attempt",
+            stampInkColorHex = "#B07D46",
+            stampStyle = "PINE"
+        )
+
+        var attempts = 0
+        while (vm.finishTripUiState.value !is FinishTripUiState.Success && attempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            attempts++
+        }
+
+        val successState = vm.finishTripUiState.value as FinishTripUiState.Success
+        assertEquals(initialStamp.id, successState.stamp.id)
+        assertEquals(initialStamp.stampCode, successState.stamp.stampCode)
+        assertEquals(1, stampRepo.getStampsCountSync())
+    }
 }
 
 

@@ -62,7 +62,7 @@ class TripRepositoryImpl(
     override fun getCompletedTrips(): Flow<List<Trip>> =
         tripDao.getAllTrips().map { entities ->
             entities.map { it.toDomain() }
-                .filter { it.status == TripStatus.COMPLETED && !DateUtils.isFutureDate(it.date) && it.deletedAt == null }
+                .filter { it.status == TripStatus.COMPLETED && it.deletedAt == null }
                 .sortedWith(
                     compareByDescending<Trip> { DateUtils.getEpochDay(it.date, it.createdAt) }
                         .thenByDescending { it.createdAt }

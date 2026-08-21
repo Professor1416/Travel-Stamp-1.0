@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material3.Card
@@ -55,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.TripStatus
 import com.example.data.util.DateUtils
 import com.example.ui.components.ErrorStateView
 import com.example.ui.components.LoadingView
@@ -90,6 +93,7 @@ fun FinishTripScreen(
     val moments by viewModel.currentTripMoments.collectAsStateWithLifecycle()
     val checklistItems by viewModel.currentTripChecklist.collectAsStateWithLifecycle()
     val finishUiState by viewModel.finishTripUiState.collectAsStateWithLifecycle()
+    val stamp by viewModel.currentTripStamp.collectAsStateWithLifecycle()
 
     var reflectionNote by remember { mutableStateOf("") }
     var selectedInkHex by remember { mutableStateOf("#C85A32") } // Default Terracotta
@@ -108,6 +112,9 @@ fun FinishTripScreen(
     }
 
     val isSealing = finishUiState is FinishTripUiState.Loading
+
+    // Intercept back button during atomic stamp generation to prevent corrupt/partial state
+    BackHandler(enabled = isSealing) {}
 
     val inkOptions = listOf(
         InkOption("Terracotta", "#C85A32", InkTerracotta),
@@ -283,7 +290,7 @@ fun FinishTripScreen(
             ) { innerPadding ->
                 ErrorStateView(
                     title = "Unable to generate your stamp",
-                    message = "Please try again.",
+                    message = state.message.ifBlank { "Please try again." },
                     retryAction = {
                         viewModel.finishTrip(
                             tripId = currentTrip.id,
@@ -293,7 +300,10 @@ fun FinishTripScreen(
                         )
                     },
                     retryButtonText = "Retry",
-                    backAction = onNavigateBack,
+                    backAction = {
+                        viewModel.resetFinishTripState()
+                        onNavigateBack()
+                    },
                     backButtonText = "Go Back",
                     modifier = Modifier.padding(innerPadding),
                     testTag = "finish_trip_error_state"
@@ -341,6 +351,56 @@ fun FinishTripScreen(
                 .padding(horizontal = Spacing.screenHorizontal),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl)
         ) {
+            // Already-Completed Notice if trip has earned a stamp
+            if (currentTrip.status == TripStatus.COMPLETED && (currentTrip.stampEarned || stamp != null)) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = ForestPine.copy(alpha = 0.08f)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ForestPine.copy(alpha = 0.3f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.cardPadding),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MilitaryTech,
+                                    contentDescription = null,
+                                    tint = ForestPine
+                                )
+                                Text(
+                                    text = "Expedition Already Sealed",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontFamily = FontFamily.Serif,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = "This expedition has already earned its official Travel Stamp (${stamp?.stampCode ?: "#---"}).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TravelPrimaryButton(
+                                text = "VIEW OFFICIAL STAMP",
+                                icon = Icons.Default.MilitaryTech,
+                                onClick = { onStampGenerated(currentTrip.id) },
+                                testTag = "view_already_earned_stamp_button"
+                            )
+                        }
+                    }
+                }
+            }
+
             // 1. Debrief Summary Card
             item {
                 Card(
@@ -447,7 +507,51 @@ fun FinishTripScreen(
                 }
             }
 
-            // 2. Ink Color Selection
+            // 2. Clear Pre-Generation Explanation Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.cardPadding),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.md)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .padding(top = 2.dp)
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+                            Text(
+                                text = "Ready to seal this journey?",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontFamily = FontFamily.Serif,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Finishing this expedition will add it to your travel history and issue its official Travel Stamp. Its stamp number will remain permanently associated with this journey. The journey date (${currentTrip.date}) becomes part of your official passport record and can only be adjusted via 'Correct Journey Date'.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. Ink Color Selection
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -514,7 +618,7 @@ fun FinishTripScreen(
                 }
             }
 
-            // 3. Stamp Motif / Style Option
+            // 4. Stamp Motif / Style Option
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -576,7 +680,7 @@ fun FinishTripScreen(
                 }
             }
 
-            // 4. Final Reflection Note
+            // 5. Final Reflection Note
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -666,19 +770,25 @@ fun FinishTripScreen(
 
     if (showFinishConfirmationDialog) {
         TravelConfirmationDialog(
-            title = "Finish this trip?",
-            message = "Finishing your trip will generate its official Travel Stamp.",
-            confirmButtonText = "Generate Stamp",
+            title = "Seal Expedition & Issue Stamp?",
+            message = "Finishing will mark '${currentTrip.name}' as completed and permanently issue its official Travel Stamp with a unique number. The journey date (${currentTrip.date}) will become part of your permanent passport record.",
+            confirmButtonText = "Seal & Issue Stamp",
             onConfirm = {
-                showFinishConfirmationDialog = false
-                viewModel.finishTrip(
-                    tripId = currentTrip.id,
-                    reflectionNote = reflectionNote.trim().ifBlank { null },
-                    stampInkColorHex = selectedInkHex,
-                    stampStyle = selectedStyle
-                )
+                if (!isSealing) {
+                    showFinishConfirmationDialog = false
+                    viewModel.finishTrip(
+                        tripId = currentTrip.id,
+                        reflectionNote = reflectionNote.trim().ifBlank { null },
+                        stampInkColorHex = selectedInkHex,
+                        stampStyle = selectedStyle
+                    )
+                }
             },
-            onDismiss = { showFinishConfirmationDialog = false }
+            onDismiss = {
+                if (!isSealing) {
+                    showFinishConfirmationDialog = false
+                }
+            }
         )
     }
 }

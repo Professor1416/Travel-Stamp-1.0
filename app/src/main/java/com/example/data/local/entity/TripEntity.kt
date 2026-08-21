@@ -32,9 +32,8 @@ data class TripEntity(
 ) {
     fun toDomain(): Trip {
         val resolvedStatus = when {
-            DateUtils.isFutureDate(date) -> TripStatus.UPCOMING
-            status == "COMPLETED" && (stampEarned || completedAt != null) -> TripStatus.COMPLETED
             status == "COMPLETED" -> TripStatus.COMPLETED
+            DateUtils.isFutureDate(date) -> TripStatus.UPCOMING
             status == "ACTIVE" || status == "IN_PROGRESS" -> TripStatus.IN_PROGRESS
             else -> TripStatus.IN_PROGRESS
         }

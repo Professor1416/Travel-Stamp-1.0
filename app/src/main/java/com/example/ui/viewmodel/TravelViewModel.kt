@@ -283,16 +283,23 @@ class TravelViewModel(
     ) {
         viewModelScope.launch {
             val existing = tripRepository.getTripByIdSync(tripId) ?: return@launch
+            // For completed trips with official stamps, date cannot be casually modified here
+            val targetDate = if (existing.status == TripStatus.COMPLETED && existing.stampEarned) {
+                existing.date
+            } else {
+                date.trim()
+            }
+
             val resolvedStatus = when {
-                existing.status == TripStatus.COMPLETED && existing.stampEarned -> TripStatus.COMPLETED
-                DateUtils.isFutureDate(date) -> TripStatus.UPCOMING
+                existing.status == TripStatus.COMPLETED -> TripStatus.COMPLETED
+                DateUtils.isFutureDate(targetDate) -> TripStatus.UPCOMING
                 else -> TripStatus.IN_PROGRESS
             }
 
             val updated = existing.copy(
                 name = name.trim(),
                 destination = destination.trim(),
-                date = date.trim(),
+                date = targetDate,
                 peopleCount = if (peopleCount < 1) 1 else peopleCount,
                 description = description.trim(),
                 status = resolvedStatus,
@@ -300,6 +307,31 @@ class TravelViewModel(
             )
             tripRepository.updateTrip(updated)
             onUpdated()
+        }
+    }
+
+    /**
+     * [GITHUB ISSUE #5 - CONTROLLED OFFICIAL JOURNEY DATE CORRECTION]:
+     * Deliberate action to correct the official journey date on a completed/stamped trip.
+     * Updates BOTH the Trip entity and the TravelStamp entity atomically.
+     * Preserves stamp identity (number, UUID, code, style, ink color, sequence).
+     */
+    fun correctOfficialJourneyDate(
+        tripId: Long,
+        newDate: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val result = travelStampRepository.correctOfficialJourneyDate(tripId, newDate)
+            result.fold(
+                onSuccess = {
+                    onSuccess()
+                },
+                onFailure = { error ->
+                    onError(error.message ?: "Failed to correct official journey date")
+                }
+            )
         }
     }
 

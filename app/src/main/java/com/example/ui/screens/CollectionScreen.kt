@@ -28,9 +28,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
@@ -93,6 +95,8 @@ import com.example.data.util.StampSortOption
 import com.example.data.util.StatusFilter
 import com.example.ui.components.CollectionStampItem
 import com.example.ui.components.EmptyStateView
+import com.example.ui.components.PassportStampGridCard
+import com.example.ui.components.PassportStampGridRow
 import com.example.ui.components.PassportSummaryCard
 import com.example.ui.components.Spacing
 import com.example.ui.components.TripCardTicket
@@ -121,6 +125,7 @@ fun CollectionScreen(
     // State preserved across configuration changes and navigation
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
+    var isStampGridView by rememberSaveable { mutableStateOf(true) }
     
     // Sort states
     var stampSortOption by rememberSaveable { mutableStateOf(StampSortOption.NEWEST_FIRST) }
@@ -497,11 +502,104 @@ fun CollectionScreen(
                         )
                     }
                 } else {
-                    items(filteredStamps, key = { it.id }) { stamp ->
-                        CollectionStampItem(
-                            stamp = stamp,
-                            onClick = { onStampClick(stamp.tripId) }
-                        )
+                    // View Mode Switcher Header for Stamps
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = Spacing.xs),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isStampGridView) "PASSPORT BOOKLET" else "COLLECTION LIST",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Serif,
+                                    letterSpacing = 1.sp,
+                                    color = ForestPine
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "• ${filteredStamps.size} ${if (filteredStamps.size == 1) "Stamp" else "Stamps"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            // View Mode Toggle Icons (Grid / List)
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Grid View Toggle
+                                    Surface(
+                                        onClick = { isStampGridView = true },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isStampGridView) ForestPine else Color.Transparent,
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .testTag("passport_view_mode_grid")
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.GridView,
+                                                contentDescription = "Grid View",
+                                                tint = if (isStampGridView) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(2.dp))
+
+                                    // List View Toggle
+                                    Surface(
+                                        onClick = { isStampGridView = false },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (!isStampGridView) ForestPine else Color.Transparent,
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .testTag("passport_view_mode_list")
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.ViewList,
+                                                contentDescription = "List View",
+                                                tint = if (!isStampGridView) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (isStampGridView) {
+                        // 2-Column Grid Layout for Collected Passport Stamps
+                        val stampChunks = filteredStamps.chunked(2)
+                        items(stampChunks, key = { chunk -> chunk.joinToString("-") { it.id.toString() } }) { chunk ->
+                            PassportStampGridRow(
+                                stamp1 = chunk[0],
+                                stamp2 = chunk.getOrNull(1),
+                                onStampClick = onStampClick
+                            )
+                        }
+                    } else {
+                        // Single-Column Detailed Ticket List Layout
+                        items(filteredStamps, key = { it.id }) { stamp ->
+                            CollectionStampItem(
+                                stamp = stamp,
+                                onClick = { onStampClick(stamp.tripId) }
+                            )
+                        }
                     }
                 }
             } else {

@@ -112,6 +112,7 @@ fun TripCardScreen(
     val trip by viewModel.currentTrip.collectAsStateWithLifecycle()
     val checklistItems by viewModel.currentTripChecklist.collectAsStateWithLifecycle()
     val moments by viewModel.currentTripMoments.collectAsStateWithLifecycle()
+    val stamp by viewModel.currentTripStamp.collectAsStateWithLifecycle()
 
     var isInitialLoading by remember(viewModel.selectedTripId.value) { mutableStateOf(true) }
 
@@ -129,6 +130,10 @@ fun TripCardScreen(
     var showDeleteTripDialog by remember { mutableStateOf(false) }
     var showEditTripDialog by remember { mutableStateOf(false) }
     var showDatePickerDialog by remember { mutableStateOf(false) }
+    var showCorrectDateDialog by remember { mutableStateOf(false) }
+    var showCorrectDatePickerDialog by remember { mutableStateOf(false) }
+    var proposedCorrectDate by remember { mutableStateOf("") }
+    var correctDateError by remember { mutableStateOf<String?>(null) }
 
     var editName by remember { mutableStateOf("") }
     var editDestination by remember { mutableStateOf("") }
@@ -222,8 +227,29 @@ fun TripCardScreen(
                             },
                             leadingIcon = {
                                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
+                            },
+                            modifier = Modifier.testTag("menu_edit_trip_details")
                         )
+                        if (currentTrip.status == TripStatus.COMPLETED && (currentTrip.stampEarned || stamp != null)) {
+                            DropdownMenuItem(
+                                text = { Text("Correct Journey Date") },
+                                onClick = {
+                                    showMenu = false
+                                    proposedCorrectDate = currentTrip.date
+                                    correctDateError = null
+                                    showCorrectDateDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.CalendarMonth,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                modifier = Modifier.testTag("menu_correct_journey_date")
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Delete Trip", color = MaterialTheme.colorScheme.error) },
                             onClick = {
@@ -237,7 +263,8 @@ fun TripCardScreen(
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(18.dp)
                                 )
-                            }
+                            },
+                            modifier = Modifier.testTag("menu_delete_trip")
                         )
                     }
                 },
@@ -574,37 +601,73 @@ fun TripCardScreen(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
                     )
 
-                    // Date Field - Read-only with Material 3 Calendar DatePicker
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    // Date Field - Locked with lock icon for completed/stamped trips; editable via DatePicker for upcoming/in-progress trips
+                    val isDateLocked = currentTrip.status == TripStatus.COMPLETED && (currentTrip.stampEarned || stamp != null)
+                    if (isDateLocked) {
                         OutlinedTextField(
                             value = editDate,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Date *") },
+                            enabled = false,
+                            label = { Text("Trip Date") },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = Icons.Default.CalendarMonth,
-                                    contentDescription = "Select Date",
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Official journey date locked",
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             },
+                            supportingText = {
+                                Text(
+                                    text = "Official journey date locked 🔒 Use 'Correct Journey Date' in menu to change.",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            },
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                                disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                disabledBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                disabledLeadingIconColor = MaterialTheme.colorScheme.primary,
+                                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                             ),
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("edit_trip_date_input"),
+                                .testTag("edit_trip_date_locked_input"),
                             shape = RoundedCornerShape(10.dp)
                         )
-                        // Click overlay to trigger DatePicker dialog without soft keyboard
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .clickable { showDatePickerDialog = true }
-                                .testTag("edit_trip_date_picker_button")
-                        )
+                    } else {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = editDate,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Date *") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarMonth,
+                                        contentDescription = "Select Date",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                                ),
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("edit_trip_date_input"),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            // Click overlay to trigger DatePicker dialog without soft keyboard
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clickable { showDatePickerDialog = true }
+                                    .testTag("edit_trip_date_picker_button")
+                            )
+                        }
                     }
 
                     OutlinedTextField(
@@ -722,6 +785,200 @@ fun TripCardScreen(
                 title = {
                     Text(
                         text = "Select date",
+                        modifier = Modifier.padding(start = 24.dp, top = 16.dp),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            )
+        }
+    }
+
+    // GITHUB ISSUE #5: Correct Journey Date Dialog for Completed/Stamped Trips
+    if (showCorrectDateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCorrectDateDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Correct Journey Date?",
+                        fontFamily = FontFamily.Serif,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "This date is part of your official Travel Stamp record. Correcting it will update both the journey record and its official stamp.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(Spacing.md),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                        ) {
+                            Text(
+                                text = "Current Official Date:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = currentTrip.date,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = "Proposed Corrected Date:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showCorrectDatePickerDialog = true }
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = proposedCorrectDate.ifBlank { "Select new date" },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Pick date",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "The permanent stamp number (${stamp?.stampCode ?: "#---"}) and issuance identity will remain unchanged.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (correctDateError != null) {
+                        Text(
+                            text = correctDateError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (proposedCorrectDate.isBlank()) {
+                            correctDateError = "Please select a valid date"
+                            return@Button
+                        }
+                        if (DateUtils.isFutureDate(proposedCorrectDate)) {
+                            correctDateError = "A completed journey date cannot be set in the future"
+                            return@Button
+                        }
+                        viewModel.correctOfficialJourneyDate(
+                            tripId = currentTrip.id,
+                            newDate = proposedCorrectDate.trim(),
+                            onSuccess = {
+                                showCorrectDateDialog = false
+                            },
+                            onError = { errorMsg ->
+                                correctDateError = errorMsg
+                            }
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.testTag("confirm_correct_date_button")
+                ) {
+                    Text("Confirm Correction")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showCorrectDateDialog = false },
+                    modifier = Modifier.testTag("cancel_correct_date_button")
+                ) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(18.dp)
+        )
+    }
+
+    // Material 3 DatePickerDialog for Correct Journey Date
+    if (showCorrectDatePickerDialog) {
+        val initialLocalDate = remember(proposedCorrectDate) {
+            DateUtils.parseTripDate(proposedCorrectDate) ?: DateUtils.getTodayLocalDate()
+        }
+        val initialUtcMillis = remember(initialLocalDate) {
+            initialLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        }
+        val correctDatePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = initialUtcMillis
+        )
+
+        DatePickerDialog(
+            onDismissRequest = { showCorrectDatePickerDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        correctDatePickerState.selectedDateMillis?.let { millis ->
+                            val selectedLocalDate = Instant.ofEpochMilli(millis)
+                                .atZone(ZoneOffset.UTC)
+                                .toLocalDate()
+                            proposedCorrectDate = selectedLocalDate.format(
+                                DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH)
+                            )
+                            correctDateError = null
+                        }
+                        showCorrectDatePickerDialog = false
+                    },
+                    modifier = Modifier.testTag("correct_date_picker_confirm_button")
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showCorrectDatePickerDialog = false },
+                    modifier = Modifier.testTag("correct_date_picker_cancel_button")
+                ) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            DatePicker(
+                state = correctDatePickerState,
+                title = {
+                    Text(
+                        text = "Select corrected journey date",
                         modifier = Modifier.padding(start = 24.dp, top = 16.dp),
                         style = MaterialTheme.typography.labelMedium
                     )

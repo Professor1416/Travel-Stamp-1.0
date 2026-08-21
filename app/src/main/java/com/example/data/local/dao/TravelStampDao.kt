@@ -57,6 +57,32 @@ interface TravelStampDao {
     @Query("UPDATE trips SET status = 'COMPLETED', stampEarned = 1, completedAt = :completedAt, updatedAt = :completedAt WHERE id = :tripId")
     suspend fun markTripCompleted(tripId: Long, completedAt: Long): Int
 
+    @Query("UPDATE trips SET date = :newDate, updatedAt = :updatedAt WHERE id = :tripId")
+    suspend fun updateTripDateInternal(tripId: Long, newDate: String, updatedAt: Long): Int
+
+    @Query("UPDATE travel_stamps SET dateText = :newDate, updatedAt = :updatedAt WHERE tripId = :tripId")
+    suspend fun updateStampDateInternal(tripId: Long, newDate: String, updatedAt: Long): Int
+
+    /**
+     * [GITHUB ISSUE #5 - ATOMIC OFFICIAL JOURNEY DATE CORRECTION]:
+     * Atomically corrects the official journey date for a completed/stamped trip.
+     * Updates BOTH `trips.date` and `travel_stamps.dateText` within a single Room @Transaction.
+     * Preserves:
+     * - stampNumber
+     * - stampCode
+     * - TravelStamp UUID & ID
+     * - Trip UUID & ID
+     * - issuedAt, inkColorHex, stampStyle, reflectionNote
+     * Does NOT allocate a new stamp number or recreate rows.
+     */
+    @Transaction
+    suspend fun correctOfficialJourneyDate(tripId: Long, newDate: String, updatedAt: Long = System.currentTimeMillis()): Boolean {
+        val stamp = getStampForTripSync(tripId) ?: return false
+        val tripRows = updateTripDateInternal(tripId, newDate, updatedAt)
+        val stampRows = updateStampDateInternal(tripId, newDate, updatedAt)
+        return tripRows > 0 && stampRows > 0
+    }
+
     /**
      * Atomically allocates the next sequential permanent stamp number.
      * Guaranteed to be monotonic and NEVER decrements or reuses numbers even if previous stamps are deleted.
@@ -99,7 +125,7 @@ interface TravelStampDao {
 
         // 2. Allocate permanent monotonic sequence number
         val nextNumber = allocateNextStampNumber()
-        val formattedCode = "#" + String.format(Locale.getDefault(), "%03d", nextNumber)
+        val formattedCode = "#" + String.format(Locale.ENGLISH, "%03d", nextNumber)
 
         val entity = TravelStampEntity(
             tripId = tripId,
@@ -144,7 +170,7 @@ interface TravelStampDao {
         }
 
         val nextNumber = allocateNextStampNumber()
-        val formattedCode = "#" + String.format(Locale.getDefault(), "%03d", nextNumber)
+        val formattedCode = "#" + String.format(Locale.ENGLISH, "%03d", nextNumber)
         val entity = stampBuilder(nextNumber, formattedCode)
         insertStamp(entity)
         return getStampForTripSync(tripId) ?: entity
