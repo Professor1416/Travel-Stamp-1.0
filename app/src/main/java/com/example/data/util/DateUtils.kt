@@ -8,16 +8,28 @@ import java.util.Locale
 
 object DateUtils {
 
-    private val formatters = listOf(
-        DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("d/M/yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("MM/dd/yyyy", Locale.ENGLISH)
+    private val formatPatterns = listOf(
+        "d MMM yyyy",
+        "dd MMM yyyy",
+        "d MMMM yyyy",
+        "dd MMMM yyyy",
+        "yyyy-MM-dd",
+        "d/M/yyyy",
+        "dd/MM/yyyy",
+        "MM/dd/yyyy",
+        "d-M-yyyy",
+        "dd-MM-yyyy",
+        "yyyy/MM/dd",
+        "d.M.yyyy",
+        "dd.MM.yyyy"
     )
+
+    private val formatters = formatPatterns.map { pattern ->
+        DateTimeFormatterBuilder()
+            .parseCaseInsensitive()
+            .appendPattern(pattern)
+            .toFormatter(Locale.ENGLISH)
+    }
 
     /**
      * Returns today's date in user's default local timezone.
@@ -44,6 +56,15 @@ object DateUtils {
     }
 
     /**
+     * Converts a trip date string into an epoch day (days since 1970-01-01) for strict chronological sorting.
+     * If the date string cannot be parsed, falls back to the provided epoch millisecond timestamp (e.g. createdAt/issuedAt).
+     */
+    fun getEpochDay(dateStr: String?, fallbackMillis: Long = 0L): Long {
+        val parsed = parseTripDate(dateStr)
+        return parsed?.toEpochDay() ?: (fallbackMillis / (1000L * 60L * 60L * 24L))
+    }
+
+    /**
      * Checks if a given trip date is strictly in the future compared to today's local date.
      */
     fun isFutureDate(dateStr: String?, today: LocalDate = getTodayLocalDate()): Boolean {
@@ -66,3 +87,4 @@ object DateUtils {
         return date.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH))
     }
 }
+

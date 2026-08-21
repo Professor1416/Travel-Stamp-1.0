@@ -1,10 +1,13 @@
 package com.example.data.repository
 
+import android.content.Context
+import com.example.data.local.dao.MomentDao
 import com.example.data.local.dao.TripDao
 import com.example.data.local.entity.TripEntity
 import com.example.data.model.Trip
 import com.example.data.model.TripStatus
 import com.example.data.util.DateUtils
+import com.example.ui.util.PhotoUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -12,6 +15,8 @@ interface TripRepository {
     fun getAllTrips(): Flow<List<Trip>>
     fun getActiveTrips(): Flow<List<Trip>>
     fun getCompletedTrips(): Flow<List<Trip>>
+    fun observeRecentJourneys(): Flow<List<Trip>>
+    fun observeUpcomingJourneys(): Flow<List<Trip>>
     fun getTripById(id: Long): Flow<Trip?>
     suspend fun getTripByIdSync(id: Long): Trip?
     suspend fun createTrip(trip: Trip): Long
@@ -28,17 +33,46 @@ interface TripRepository {
 }
 
 class TripRepositoryImpl(
-    private val tripDao: TripDao
+    private val tripDao: TripDao,
+    private val momentDao: MomentDao? = null,
+    private val context: Context? = null
 ) : TripRepository {
 
     override fun getAllTrips(): Flow<List<Trip>> =
-        tripDao.getAllTrips().map { entities -> entities.map { it.toDomain() } }
+        tripDao.getAllTrips().map { entities ->
+            entities.map { it.toDomain() }
+                .filter { it.deletedAt == null }
+                .sortedWith(
+                    compareByDescending<Trip> { DateUtils.getEpochDay(it.date, it.createdAt) }
+                        .thenByDescending { it.createdAt }
+                        .thenBy { it.id }
+                )
+        }
 
     override fun getActiveTrips(): Flow<List<Trip>> =
-        tripDao.getActiveTrips().map { entities -> entities.map { it.toDomain() } }
+        tripDao.getAllTrips().map { entities ->
+            entities.map { it.toDomain() }
+                .filter { it.status != TripStatus.COMPLETED && it.deletedAt == null }
+                .sortedWith(
+                    compareBy<Trip> { DateUtils.getEpochDay(it.date, it.createdAt) }
+                        .thenBy { it.id }
+                )
+        }
 
     override fun getCompletedTrips(): Flow<List<Trip>> =
-        tripDao.getCompletedTrips().map { entities -> entities.map { it.toDomain() } }
+        tripDao.getAllTrips().map { entities ->
+            entities.map { it.toDomain() }
+                .filter { it.status == TripStatus.COMPLETED && !DateUtils.isFutureDate(it.date) && it.deletedAt == null }
+                .sortedWith(
+                    compareByDescending<Trip> { DateUtils.getEpochDay(it.date, it.createdAt) }
+                        .thenByDescending { it.createdAt }
+                        .thenBy { it.id }
+                )
+        }
+
+    override fun observeRecentJourneys(): Flow<List<Trip>> = getCompletedTrips()
+
+    override fun observeUpcomingJourneys(): Flow<List<Trip>> = getActiveTrips()
 
     override fun getTripById(id: Long): Flow<Trip?> =
         tripDao.getTripById(id).map { it?.toDomain() }
@@ -83,8 +117,21 @@ class TripRepositoryImpl(
         return true
     }
 
-    override suspend fun deleteTrip(id: Long) =
+    override suspend fun deleteTrip(id: Long) {
+        val moments = momentDao?.getMomentsForTripSync(id) ?: emptyList()
+        val imageUris = moments.mapNotNull { it.imageUri }.filter { it.isNotBlank() }
+
         tripDao.deleteTripById(id)
+
+        if (context != null && momentDao != null) {
+            for (uri in imageUris) {
+                val remainingUsage = momentDao.getImageUriUsageCount(uri)
+                if (remainingUsage == 0) {
+                    PhotoUtils.safeDeleteInternalImage(context, uri)
+                }
+            }
+        }
+    }
 
     override fun getCompletedTripsCount(): Flow<Int> =
         tripDao.getCompletedTripsCount()

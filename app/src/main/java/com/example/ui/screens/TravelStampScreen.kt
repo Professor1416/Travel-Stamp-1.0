@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Hiking
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -55,9 +57,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.components.ErrorStateView
+import com.example.ui.components.LoadingView
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelOutlinedButton
 import com.example.ui.components.TravelPrimaryButton
@@ -67,6 +72,7 @@ import com.example.ui.theme.Terracotta
 import com.example.ui.util.StampExporter
 import com.example.ui.viewmodel.TravelViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -84,12 +90,27 @@ fun TravelStampScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    LaunchedEffect(tripId) {
+        viewModel.selectTrip(tripId)
+    }
+
     val trip by viewModel.currentTrip.collectAsStateWithLifecycle()
     val stamp by viewModel.currentTripStamp.collectAsStateWithLifecycle()
     val moments by viewModel.currentTripMoments.collectAsStateWithLifecycle()
 
     var isSavingToGallery by remember { mutableStateOf(false) }
     var isSharing by remember { mutableStateOf(false) }
+    var isInitialLoading by remember(tripId) { mutableStateOf(true) }
+
+    LaunchedEffect(tripId, stamp, trip) {
+        if (stamp != null && trip != null) {
+            isInitialLoading = false
+        } else {
+            // Allow up to 1000ms for Room Flow emission before declaring not found
+            delay(1000)
+            isInitialLoading = false
+        }
+    }
 
     // Stamp Reveal Animation States
     val stampScale = remember { Animatable(1.25f) }
@@ -112,16 +133,24 @@ fun TravelStampScreen(
     }
 
     if (stamp == null || trip == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = Terracotta)
-                Spacer(modifier = Modifier.height(Spacing.lg))
-                Text(
-                    text = "Retrieving your Travel Stamp...",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        if (isInitialLoading) {
+            LoadingView(
+                message = "Loading stamp...",
+                testTag = "stamp_loading_view"
+            )
+        } else {
+            ErrorStateView(
+                title = "Stamp not found",
+                message = "Unable to load the official travel stamp for this journey. Please check your journey log or try again.",
+                retryAction = {
+                    isInitialLoading = true
+                    viewModel.selectTrip(tripId)
+                },
+                retryButtonText = "Retry",
+                backAction = onNavigateBack,
+                backButtonText = "Go Back",
+                testTag = "stamp_error_view"
+            )
         }
         return
     }
@@ -315,6 +344,92 @@ fun TravelStampScreen(
                         onClick = onViewTripCard,
                         testTag = "view_trip_log_button"
                     )
+                }
+            }
+
+            // 4. Expedition Memories & Timeline Section
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = "⏱️", fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(Spacing.sm))
+                                Text(
+                                    text = "EXPEDITION TIMELINE (${moments.size})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 1.2.sp
+                                )
+                            }
+                        }
+
+                        if (moments.isEmpty()) {
+                            Text(
+                                text = "No moments recorded yet. You can continue adding trail notes, milestones, and photos to this completed journey anytime.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                moments.take(3).forEach { moment ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                            .padding(Spacing.sm),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(text = moment.category.emoji, fontSize = 16.sp)
+                                        Spacer(modifier = Modifier.width(Spacing.sm))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = moment.category.title,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            if (moment.note.isNotBlank()) {
+                                                Text(
+                                                    text = moment.note,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        TravelOutlinedButton(
+                            text = "VIEW TIMELINE & ADD MEMORIES",
+                            icon = Icons.Default.Hiking,
+                            onClick = onViewTripCard,
+                            testTag = "view_timeline_button"
+                        )
+                    }
                 }
             }
 

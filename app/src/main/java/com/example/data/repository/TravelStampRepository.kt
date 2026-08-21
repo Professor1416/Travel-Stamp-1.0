@@ -4,8 +4,10 @@ import com.example.data.local.dao.TravelStampDao
 import com.example.data.local.entity.TravelStampEntity
 import com.example.data.model.TravelStamp
 import com.example.data.util.DateUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 interface TravelStampRepository {
     fun getAllStamps(): Flow<List<TravelStamp>>
@@ -13,6 +15,25 @@ interface TravelStampRepository {
     suspend fun getStampForTripSync(tripId: Long): TravelStamp?
     fun getStampById(id: Long): Flow<TravelStamp?>
     suspend fun issueStamp(stamp: TravelStamp): Long
+    
+    /**
+     * [ATOMICITY, IDEMPOTENCY & THREAD-SAFETY]:
+     * Completes a trip and issues its Travel Stamp atomically in a single Room @Transaction.
+     * Wrapped in Result<TravelStamp> and executes on Dispatchers.IO.
+     */
+    suspend fun completeTripAndIssueStamp(
+        tripId: Long,
+        title: String,
+        destination: String,
+        dateText: String,
+        peopleCount: Int,
+        momentsCount: Int,
+        inkColorHex: String,
+        stampStyle: String,
+        reflectionNote: String?,
+        completedAt: Long = System.currentTimeMillis()
+    ): Result<TravelStamp>
+
     suspend fun issueOfficialStampForTrip(
         tripId: Long,
         title: String,
@@ -23,9 +44,11 @@ interface TravelStampRepository {
         inkColorHex: String,
         stampStyle: String,
         reflectionNote: String?,
-        completedAt: Long
+        completedAt: Long = System.currentTimeMillis()
     ): TravelStamp?
+
     suspend fun deleteStamp(id: Long)
+    suspend fun updateStampMomentsCount(tripId: Long)
     fun getStampsCount(): Flow<Int>
     suspend fun getStampsCountSync(): Int
     suspend fun allocateNextStampNumber(): Long
@@ -54,6 +77,54 @@ class TravelStampRepositoryImpl(
         return stampDao.insertStamp(TravelStampEntity.fromDomain(stamp))
     }
 
+    /**
+     * [ATOMICITY & IDEMPOTENCY]:
+     * 1. Validates trip date is not in the future.
+     * 2. Checks if stamp already exists for tripId (idempotent shortcut).
+     * 3. Executes atomic Room @Transaction via Dispatchers.IO.
+     */
+    override suspend fun completeTripAndIssueStamp(
+        tripId: Long,
+        title: String,
+        destination: String,
+        dateText: String,
+        peopleCount: Int,
+        momentsCount: Int,
+        inkColorHex: String,
+        stampStyle: String,
+        reflectionNote: String?,
+        completedAt: Long
+    ): Result<TravelStamp> = withContext(Dispatchers.IO) {
+        runCatching {
+            // Validation: Never issue a stamp for a future trip
+            if (DateUtils.isFutureDate(dateText)) {
+                error("Cannot complete a future journey. Starts on $dateText.")
+            }
+
+            // Idempotency check: Return existing stamp immediately if already created
+            val existing = stampDao.getStampForTripSync(tripId)
+            if (existing != null) {
+                stampDao.markTripCompleted(tripId, completedAt)
+                return@runCatching existing.toDomain()
+            }
+
+            // Atomic transaction: Insert stamp & mark trip COMPLETED together
+            val entity = stampDao.completeTripAndIssueStampAtomic(
+                tripId = tripId,
+                title = title,
+                destination = destination,
+                dateText = dateText,
+                peopleCount = peopleCount,
+                momentsCount = momentsCount,
+                inkColorHex = inkColorHex,
+                stampStyle = stampStyle,
+                reflectionNote = reflectionNote,
+                completedAt = completedAt
+            )
+            entity.toDomain()
+        }
+    }
+
     override suspend fun issueOfficialStampForTrip(
         tripId: Long,
         title: String,
@@ -66,33 +137,28 @@ class TravelStampRepositoryImpl(
         reflectionNote: String?,
         completedAt: Long
     ): TravelStamp? {
-        // Business logic validation: Never issue a stamp for a future trip
-        if (DateUtils.isFutureDate(dateText)) {
-            return null
-        }
-
-        val entity = stampDao.issueOfficialStamp(tripId) { nextNumber, formattedCode ->
-            TravelStampEntity(
-                tripId = tripId,
-                stampNumber = nextNumber,
-                stampCode = formattedCode,
-                title = title,
-                destination = destination,
-                dateText = dateText,
-                peopleCount = peopleCount,
-                momentsCount = momentsCount,
-                inkColorHex = inkColorHex,
-                stampStyle = stampStyle,
-                reflectionNote = reflectionNote,
-                issuedAt = completedAt,
-                completedAt = completedAt
-            )
-        }
-        return entity.toDomain()
+        return completeTripAndIssueStamp(
+            tripId = tripId,
+            title = title,
+            destination = destination,
+            dateText = dateText,
+            peopleCount = peopleCount,
+            momentsCount = momentsCount,
+            inkColorHex = inkColorHex,
+            stampStyle = stampStyle,
+            reflectionNote = reflectionNote,
+            completedAt = completedAt
+        ).getOrNull()
     }
 
     override suspend fun deleteStamp(id: Long) =
         stampDao.deleteStampById(id)
+
+    override suspend fun updateStampMomentsCount(tripId: Long) {
+        withContext(Dispatchers.IO) {
+            stampDao.updateStampMomentsCount(tripId)
+        }
+    }
 
     override fun getStampsCount(): Flow<Int> =
         stampDao.getStampsCount()

@@ -20,8 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Settings
@@ -38,6 +38,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +51,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.Trip
+import com.example.data.util.DateUtils
 import com.example.ui.components.CompactStampBadge
 import com.example.ui.components.EmptyStateView
 import com.example.ui.components.MoreStampsIndicator
@@ -63,6 +66,7 @@ import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
 
 private const val HOME_COLLECTION_PREVIEW_LIMIT = 4
+private const val RECENT_COMPLETED_PREVIEW_LIMIT = 3
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +84,10 @@ fun HomeScreen(
     val stamps by viewModel.stamps.collectAsStateWithLifecycle()
     val completedTripsCount by viewModel.completedTripsCount.collectAsStateWithLifecycle()
     val totalMomentsCount by viewModel.totalMomentsCount.collectAsStateWithLifecycle()
+
+    // Repository-level authoritative sorting
+    val sortedActiveTrips = activeTrips
+    val sortedCompletedTrips = completedTrips
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -285,7 +293,7 @@ fun HomeScreen(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Icon(
-                                    imageVector = Icons.Default.ArrowForward,
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                     contentDescription = "Open Collection",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(16.dp)
@@ -296,19 +304,56 @@ fun HomeScreen(
                 }
             }
 
-            // 4. Current Expeditions (Active Trips)
-            if (activeTrips.isNotEmpty()) {
-                item {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SectionHeader(
-                            title = "Current Expeditions",
-                            emoji = "🧭",
-                            trailingText = "${activeTrips.size} Active",
-                            modifier = Modifier.padding(bottom = Spacing.md)
-                        )
+            // 4. Current Expeditions (Active / Upcoming Trips)
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader(
+                        title = "Current Expeditions",
+                        emoji = "🧭",
+                        trailingText = if (sortedActiveTrips.isNotEmpty()) "${sortedActiveTrips.size} Active" else null,
+                        modifier = Modifier.padding(bottom = Spacing.md)
+                    )
 
+                    if (sortedActiveTrips.isEmpty()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("no_active_expeditions_card"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(Spacing.lg),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(text = "🧭", fontSize = 28.sp)
+                                Spacer(modifier = Modifier.height(Spacing.xs))
+                                Text(
+                                    text = "No upcoming expeditions",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(Spacing.xxs))
+                                Text(
+                                    text = "Plan your next journey to organize gear, checklists & moments.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                            activeTrips.forEach { trip ->
+                            sortedActiveTrips.forEach { trip ->
                                 TripCardTicket(
                                     trip = trip,
                                     onClick = { onTripClick(trip.id) }
@@ -319,24 +364,84 @@ fun HomeScreen(
                 }
             }
 
-            // 5. Recent Completed Expeditions Preview (if any)
-            if (completedTrips.isNotEmpty() && activeTrips.isEmpty()) {
-                item {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SectionHeader(
-                            title = "Recent Journeys",
-                            emoji = "🏅",
-                            trailingText = "View All",
-                            onTrailingClick = onCollectionClick,
-                            modifier = Modifier.padding(bottom = Spacing.md)
-                        )
+            // 5. Recent Completed Journeys (Strictly sorted by trip date, latest 2-3 preview)
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader(
+                        title = "Recent Journeys",
+                        emoji = "🏅",
+                        trailingText = if (sortedCompletedTrips.isNotEmpty()) "View All" else null,
+                        onTrailingClick = onCollectionClick,
+                        modifier = Modifier.padding(bottom = Spacing.md)
+                    )
 
+                    if (sortedCompletedTrips.isEmpty()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("no_recent_journeys_card"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(Spacing.lg),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(text = "🏅", fontSize = 28.sp)
+                                Spacer(modifier = Modifier.height(Spacing.xs))
+                                Text(
+                                    text = "Your journey collection starts here",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(Spacing.xxs))
+                                Text(
+                                    text = "Complete an expedition to issue your first official Travel Stamp.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                            completedTrips.take(2).forEach { trip ->
+                            val displayCompleted = sortedCompletedTrips.take(RECENT_COMPLETED_PREVIEW_LIMIT)
+                            displayCompleted.forEach { trip ->
                                 TripCardTicket(
                                     trip = trip,
                                     onClick = { onTripClick(trip.id) }
                                 )
+                            }
+
+                            if (sortedCompletedTrips.size > RECENT_COMPLETED_PREVIEW_LIMIT) {
+                                Spacer(modifier = Modifier.height(Spacing.xs))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { onCollectionClick() }
+                                        .padding(vertical = Spacing.sm, horizontal = Spacing.xs)
+                                        .testTag("view_all_journeys_button"),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "VIEW ALL JOURNEYS (${sortedCompletedTrips.size}) →",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
                             }
                         }
                     }

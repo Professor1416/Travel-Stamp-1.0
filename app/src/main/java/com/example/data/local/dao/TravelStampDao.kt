@@ -27,6 +27,9 @@ interface TravelStampDao {
     @Query("SELECT * FROM travel_stamps WHERE id = :id LIMIT 1")
     fun getStampById(id: Long): Flow<TravelStampEntity?>
 
+    @Query("SELECT * FROM travel_stamps WHERE stampNumber = :stampNumber LIMIT 1")
+    suspend fun getStampByNumberSync(stampNumber: Long): TravelStampEntity?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertStamp(stamp: TravelStampEntity): Long
 
@@ -48,6 +51,12 @@ interface TravelStampDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun setLastAllocatedSequence(sequence: StampSequenceEntity)
 
+    @Query("UPDATE travel_stamps SET momentsCount = (SELECT COUNT(*) FROM moments WHERE tripId = :tripId AND deletedAt IS NULL) WHERE tripId = :tripId")
+    suspend fun updateStampMomentsCount(tripId: Long)
+
+    @Query("UPDATE trips SET status = 'COMPLETED', stampEarned = 1, completedAt = :completedAt, updatedAt = :completedAt WHERE id = :tripId")
+    suspend fun markTripCompleted(tripId: Long, completedAt: Long): Int
+
     /**
      * Atomically allocates the next sequential permanent stamp number.
      * Guaranteed to be monotonic and NEVER decrements or reuses numbers even if previous stamps are deleted.
@@ -60,6 +69,63 @@ interface TravelStampDao {
         val nextNumber = currentMax + 1L
         setLastAllocatedSequence(StampSequenceEntity(id = "STAMP_COUNTER", lastAllocatedNumber = nextNumber))
         return nextNumber
+    }
+
+    /**
+     * [ATOMICITY & IDEMPOTENCY]:
+     * Executes stamp allocation, stamp insertion, and trip completion as a single atomic Room @Transaction.
+     * If any sub-operation fails or throws an exception, Room automatically rolls back all SQLite mutations.
+     * Idempotency guarantee: If a stamp already exists for this tripId, it returns the existing stamp directly.
+     */
+    @Transaction
+    suspend fun completeTripAndIssueStampAtomic(
+        tripId: Long,
+        title: String,
+        destination: String,
+        dateText: String,
+        peopleCount: Int,
+        momentsCount: Int,
+        inkColorHex: String,
+        stampStyle: String,
+        reflectionNote: String?,
+        completedAt: Long
+    ): TravelStampEntity {
+        // 1. Idempotency Guard: Check if stamp already exists
+        val existing = getStampForTripSync(tripId)
+        if (existing != null) {
+            markTripCompleted(tripId, completedAt)
+            return existing
+        }
+
+        // 2. Allocate permanent monotonic sequence number
+        val nextNumber = allocateNextStampNumber()
+        val formattedCode = "#" + String.format(Locale.getDefault(), "%03d", nextNumber)
+
+        val entity = TravelStampEntity(
+            tripId = tripId,
+            stampNumber = nextNumber,
+            stampCode = formattedCode,
+            title = title,
+            destination = destination,
+            dateText = dateText,
+            peopleCount = peopleCount,
+            momentsCount = momentsCount,
+            inkColorHex = inkColorHex,
+            stampStyle = stampStyle,
+            reflectionNote = reflectionNote,
+            issuedAt = completedAt,
+            completedAt = completedAt,
+            createdAt = completedAt,
+            updatedAt = completedAt
+        )
+
+        // 3. Insert stamp entity
+        insertStamp(entity)
+
+        // 4. Update trip status to COMPLETED atomically in the exact same transaction
+        markTripCompleted(tripId, completedAt)
+
+        return getStampForTripSync(tripId) ?: entity
     }
 
     /**

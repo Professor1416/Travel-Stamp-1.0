@@ -120,4 +120,35 @@ object PhotoUtils {
             // Ignored safe cleanup
         }
     }
+
+    /**
+     * Safely deletes internal images (in filesDir or cacheDir) associated with deleted moments or trips.
+     * Prevents deleting external or system files and handles missing files gracefully.
+     */
+    fun safeDeleteInternalImage(context: Context, imageUriOrPath: String?) {
+        if (imageUriOrPath.isNullOrBlank()) return
+        try {
+            val file = when {
+                imageUriOrPath.startsWith("file://") -> {
+                    val parsed = Uri.parse(imageUriOrPath).path
+                    if (parsed != null) File(parsed) else null
+                }
+                imageUriOrPath.startsWith("/") -> File(imageUriOrPath)
+                else -> File(imageUriOrPath)
+            } ?: return
+
+            if (!file.exists()) return
+
+            val filesDirCanonical = context.filesDir.canonicalPath
+            val cacheDirCanonical = context.cacheDir.canonicalPath
+            val targetCanonical = file.canonicalPath
+
+            // Security invariant: Only delete files located inside the application's internal filesDir or cacheDir
+            if (targetCanonical.startsWith(filesDirCanonical) || targetCanonical.startsWith(cacheDirCanonical)) {
+                file.delete()
+            }
+        } catch (_: Exception) {
+            // Non-fatal fail-safe
+        }
+    }
 }

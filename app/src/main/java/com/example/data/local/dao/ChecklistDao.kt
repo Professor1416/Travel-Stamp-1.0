@@ -13,6 +13,9 @@ interface ChecklistDao {
     @Query("SELECT * FROM checklist_items WHERE tripId = :tripId ORDER BY sortOrder ASC, id ASC")
     fun getItemsForTrip(tripId: Long): Flow<List<ChecklistItemEntity>>
 
+    @Query("SELECT * FROM checklist_items WHERE tripId = :tripId ORDER BY sortOrder ASC, id ASC")
+    suspend fun getItemsForTripSync(tripId: Long): List<ChecklistItemEntity>
+
     @Query("SELECT * FROM checklist_items ORDER BY id ASC")
     suspend fun getAllItemsListSync(): List<ChecklistItemEntity>
 

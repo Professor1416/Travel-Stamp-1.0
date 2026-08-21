@@ -27,6 +27,7 @@ import com.example.data.util.BackupImportResult
 import com.example.data.util.BackupManager
 import com.example.data.util.DateUtils
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,7 +36,16 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
+
+sealed interface FinishTripUiState {
+    object Idle : FinishTripUiState
+    object Loading : FinishTripUiState
+    data class Success(val tripId: Long, val stamp: TravelStamp) : FinishTripUiState
+    data class Error(val message: String) : FinishTripUiState
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TravelViewModel(
@@ -53,6 +63,16 @@ class TravelViewModel(
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
+    // Concurrency & state guards for trip completion
+    private var finishTripJob: Job? = null
+    private val finishTripMutex = Mutex()
+    private val _finishTripUiState = MutableStateFlow<FinishTripUiState>(FinishTripUiState.Idle)
+    val finishTripUiState: StateFlow<FinishTripUiState> = _finishTripUiState.asStateFlow()
+
+    fun resetFinishTripState() {
+        _finishTripUiState.value = FinishTripUiState.Idle
+    }
+
     val allTrips: StateFlow<List<Trip>> = tripRepository.getAllTrips()
         .stateIn(
             scope = viewModelScope,
@@ -67,12 +87,16 @@ class TravelViewModel(
             initialValue = emptyList()
         )
 
+    val upcomingExpeditions: StateFlow<List<Trip>> = activeTrips
+
     val completedTrips: StateFlow<List<Trip>> = tripRepository.getCompletedTrips()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    val recentJourneys: StateFlow<List<Trip>> = completedTrips
 
     val stamps: StateFlow<List<TravelStamp>> = travelStampRepository.getAllStamps()
         .stateIn(
@@ -230,6 +254,7 @@ class TravelViewModel(
                     timestamp = System.currentTimeMillis()
                 )
                 momentRepository.addMoment(moment)
+                travelStampRepository.updateStampMomentsCount(tripId)
                 onSaved()
             } finally {
                 _isProcessing.value = false
@@ -237,9 +262,13 @@ class TravelViewModel(
         }
     }
 
-    fun deleteMoment(momentId: Long) {
+    fun deleteMoment(momentId: Long, tripId: Long? = null) {
         viewModelScope.launch {
             momentRepository.deleteMoment(momentId)
+            val currentId = tripId ?: _selectedTripId.value
+            if (currentId != null) {
+                travelStampRepository.updateStampMomentsCount(currentId)
+            }
         }
     }
 
@@ -274,64 +303,81 @@ class TravelViewModel(
         }
     }
 
+    /**
+     * [ATOMICITY, IDEMPOTENCY & CONCURRENCY GUARD]:
+     * 1. Uses an active Job guard (`finishTripJob?.isActive`) and Mutex to prevent double-tap race conditions.
+     * 2. Executes trip completion & stamp generation as a single atomic transaction.
+     * 3. Retrying a completed trip returns the existing stamp idempotently without duplicates.
+     * 4. Updates FinishTripUiState for explicit UI feedback (Loading -> Success/Error).
+     */
     fun finishTrip(
         tripId: Long,
         reflectionNote: String?,
         stampInkColorHex: String,
         stampStyle: String,
-        onFinished: (Long) -> Unit,
+        onFinished: (Long) -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
-        if (_isProcessing.value) return
-        _isProcessing.value = true
+        // Concurrency Guard: Immediately ignore if a finish job is currently executing
+        if (finishTripJob?.isActive == true) return
 
-        viewModelScope.launch {
-            try {
-                val trip = tripRepository.getTripByIdSync(tripId) ?: run {
-                    onError("Journey not found")
-                    return@launch
+        finishTripJob = viewModelScope.launch {
+            finishTripMutex.withLock {
+                _finishTripUiState.value = FinishTripUiState.Loading
+                _isProcessing.value = true
+
+                try {
+                    val trip = tripRepository.getTripByIdSync(tripId) ?: run {
+                        val msg = "Journey not found"
+                        _finishTripUiState.value = FinishTripUiState.Error(msg)
+                        onError(msg)
+                        return@withLock
+                    }
+
+                    // Layer 3 validation: Never complete a future trip
+                    if (DateUtils.isFutureDate(trip.date)) {
+                        val msg = "Cannot finish a future journey. Starts on ${trip.date}."
+                        _finishTripUiState.value = FinishTripUiState.Error(msg)
+                        onError(msg)
+                        return@withLock
+                    }
+
+                    val moments = momentRepository.getMomentsForTripSync(tripId)
+                    val completedTime = System.currentTimeMillis()
+
+                    // Single atomic & idempotent call completing trip and issuing stamp
+                    val result = travelStampRepository.completeTripAndIssueStamp(
+                        tripId = tripId,
+                        title = trip.name,
+                        destination = trip.destination,
+                        dateText = trip.date,
+                        peopleCount = trip.peopleCount,
+                        momentsCount = moments.size,
+                        inkColorHex = stampInkColorHex,
+                        stampStyle = stampStyle,
+                        reflectionNote = reflectionNote?.ifBlank { null } ?: trip.description,
+                        completedAt = completedTime
+                    )
+
+                    result.fold(
+                        onSuccess = { stamp ->
+                            _selectedTripId.value = tripId
+                            _finishTripUiState.value = FinishTripUiState.Success(tripId, stamp)
+                            onFinished(tripId)
+                        },
+                        onFailure = { throwable ->
+                            val msg = throwable.localizedMessage ?: "Journey could not be completed."
+                            _finishTripUiState.value = FinishTripUiState.Error(msg)
+                            onError(msg)
+                        }
+                    )
+                } catch (e: Exception) {
+                    val msg = e.localizedMessage ?: "Unexpected error completing journey"
+                    _finishTripUiState.value = FinishTripUiState.Error(msg)
+                    onError(msg)
+                } finally {
+                    _isProcessing.value = false
                 }
-
-                // Layer 3 validation: Never complete a future trip
-                if (DateUtils.isFutureDate(trip.date)) {
-                    onError("Cannot finish a future journey. Starts on ${trip.date}.")
-                    return@launch
-                }
-
-                val moments = momentRepository.getMomentsForTripSync(tripId)
-                val completedTime = System.currentTimeMillis()
-
-                // Update trip record to COMPLETED
-                val success = tripRepository.finishTrip(
-                    tripId = tripId,
-                    reflectionNote = reflectionNote,
-                    stampInkColorHex = stampInkColorHex,
-                    stampStyle = stampStyle
-                )
-
-                if (!success) {
-                    onError("Journey could not be completed.")
-                    return@launch
-                }
-
-                // Atomically issues or retrieves the official permanent TravelStamp.
-                travelStampRepository.issueOfficialStampForTrip(
-                    tripId = tripId,
-                    title = trip.name,
-                    destination = trip.destination,
-                    dateText = trip.date,
-                    peopleCount = trip.peopleCount,
-                    momentsCount = moments.size,
-                    inkColorHex = stampInkColorHex,
-                    stampStyle = stampStyle,
-                    reflectionNote = reflectionNote?.ifBlank { null } ?: trip.description,
-                    completedAt = completedTime
-                )
-
-                _selectedTripId.value = tripId
-                onFinished(tripId)
-            } finally {
-                _isProcessing.value = false
             }
         }
     }

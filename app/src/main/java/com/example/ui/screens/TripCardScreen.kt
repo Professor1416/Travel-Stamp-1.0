@@ -56,6 +56,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,6 +80,8 @@ import com.example.data.model.TripStatus
 import com.example.data.util.DateUtils
 import com.example.ui.components.ChecklistComponent
 import com.example.ui.components.EmptyStateView
+import com.example.ui.components.ErrorStateView
+import com.example.ui.components.LoadingView
 import com.example.ui.components.MomentItemCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.Spacing
@@ -89,6 +92,7 @@ import com.example.ui.components.TripCardTicket
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -108,6 +112,17 @@ fun TripCardScreen(
     val trip by viewModel.currentTrip.collectAsStateWithLifecycle()
     val checklistItems by viewModel.currentTripChecklist.collectAsStateWithLifecycle()
     val moments by viewModel.currentTripMoments.collectAsStateWithLifecycle()
+
+    var isInitialLoading by remember(viewModel.selectedTripId.value) { mutableStateOf(true) }
+
+    LaunchedEffect(viewModel.selectedTripId.value, trip) {
+        if (trip != null) {
+            isInitialLoading = false
+        } else {
+            delay(1000)
+            isInitialLoading = false
+        }
+    }
 
     var selectedCategoryFilter by remember { mutableStateOf<MomentCategory?>(null) }
     var showMenu by remember { mutableStateOf(false) }
@@ -131,11 +146,24 @@ fun TripCardScreen(
     }
 
     if (trip == null) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("Loading journey...", style = MaterialTheme.typography.bodyLarge)
+        if (isInitialLoading) {
+            LoadingView(
+                message = "Loading journey...",
+                testTag = "journey_loading_view"
+            )
+        } else {
+            ErrorStateView(
+                title = "Journey not found",
+                message = "Unable to load the expedition log. It may have been deleted or is unavailable.",
+                retryAction = {
+                    isInitialLoading = true
+                    viewModel.selectedTripId.value?.let { viewModel.selectTrip(it) }
+                },
+                retryButtonText = "Retry",
+                backAction = onNavigateBack,
+                backButtonText = "Go Back",
+                testTag = "journey_error_view"
+            )
         }
         return
     }
@@ -483,7 +511,7 @@ fun TripCardScreen(
                 items(filteredMoments, key = { it.id }) { moment ->
                     MomentItemCard(
                         moment = moment,
-                        onDelete = { viewModel.deleteMoment(moment.id) }
+                        onDelete = { viewModel.deleteMoment(moment.id, currentTrip.id) }
                     )
                 }
             }

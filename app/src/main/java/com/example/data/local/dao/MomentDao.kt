@@ -15,6 +15,12 @@ interface MomentDao {
     @Query("SELECT * FROM moments WHERE tripId = :tripId ORDER BY timestamp ASC")
     suspend fun getMomentsForTripSync(tripId: Long): List<MomentEntity>
 
+    @Query("SELECT * FROM moments WHERE id = :id LIMIT 1")
+    suspend fun getMomentByIdSync(id: Long): MomentEntity?
+
+    @Query("SELECT COUNT(*) FROM moments WHERE imageUri = :uri")
+    suspend fun getImageUriUsageCount(uri: String): Int
+
     @Query("SELECT * FROM moments ORDER BY timestamp ASC")
     suspend fun getAllMomentsListSync(): List<MomentEntity>
 

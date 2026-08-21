@@ -5,7 +5,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -48,8 +50,8 @@ fun TravelNavHost(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier
 ) {
-    val hasCompletedOnboarding by viewModel.hasCompletedOnboarding.collectAsStateWithLifecycle()
-    val startDest = if (hasCompletedOnboarding) Destinations.HOME else Destinations.ONBOARDING
+    val initialOnboardingCompleted = remember { viewModel.hasCompletedOnboarding.value }
+    val startDest = if (initialOnboardingCompleted) Destinations.HOME else Destinations.ONBOARDING
 
     NavHost(
         navController = navController,
@@ -114,7 +116,9 @@ fun TravelNavHost(
             arguments = listOf(navArgument("tripId") { type = NavType.LongType })
         ) { backStackEntry ->
             val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
-            viewModel.selectTrip(tripId)
+            androidx.compose.runtime.LaunchedEffect(tripId) {
+                viewModel.selectTrip(tripId)
+            }
 
             TripCardScreen(
                 viewModel = viewModel,
@@ -171,7 +175,9 @@ fun TravelNavHost(
             arguments = listOf(navArgument("tripId") { type = NavType.LongType })
         ) { backStackEntry ->
             val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
-            viewModel.selectTrip(tripId)
+            androidx.compose.runtime.LaunchedEffect(tripId) {
+                viewModel.selectTrip(tripId)
+            }
 
             TravelStampScreen(
                 tripId = tripId,

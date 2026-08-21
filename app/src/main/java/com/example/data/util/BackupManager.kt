@@ -3,6 +3,7 @@ package com.example.data.util
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
+import androidx.room.withTransaction
 import com.example.data.local.TravelStampDatabase
 import com.example.data.local.entity.ChecklistItemEntity
 import com.example.data.local.entity.MomentEntity
@@ -254,11 +255,15 @@ object BackupManager {
             }
         }
 
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            backupZipFile
-        )
+        val uri = try {
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                backupZipFile
+            )
+        } catch (_: Exception) {
+            Uri.fromFile(backupZipFile)
+        }
 
         BackupExportResult(
             fileUri = uri,
@@ -359,6 +364,11 @@ object BackupManager {
         database: TravelStampDatabase
     ): Result<BackupImportResult> = importBackup(context, uri, database)
 
+    suspend fun importBackupJson(
+        database: TravelStampDatabase,
+        jsonString: String
+    ): Result<BackupImportResult> = parseAndInsertBackupData(database, jsonString, emptyMap())
+
     private fun isZipStream(context: Context, uri: Uri): Boolean {
         return try {
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -377,10 +387,10 @@ object BackupManager {
         database: TravelStampDatabase,
         jsonString: String,
         restoredMediaMap: Map<String, String>
-    ): Result<BackupImportResult> {
+    ): Result<BackupImportResult> = database.withTransaction {
         val root = JSONObject(jsonString)
         if (!root.has("trips")) {
-            return Result.failure(IllegalArgumentException("Invalid Travel Stamp backup file format: missing 'trips' section."))
+            return@withTransaction Result.failure(IllegalArgumentException("Invalid Travel Stamp backup file format: missing 'trips' section."))
         }
 
         var importedTrips = 0
@@ -391,6 +401,7 @@ object BackupManager {
         // Parse Trips
         val tripsArray = root.optJSONArray("trips") ?: JSONArray()
         val oldToNewTripIdMap = mutableMapOf<Long, Long>()
+        val existingTrips = database.tripDao().getAllTripsListSync()
 
         for (i in 0 until tripsArray.length()) {
             val obj = tripsArray.getJSONObject(i)
@@ -401,7 +412,10 @@ object BackupManager {
             val rawStatus = obj.optString("status", "UPCOMING")
             val isCompleted = rawStatus == "COMPLETED" && !isFuture
 
+            val existingTrip = existingTrips.firstOrNull { it.uuid == tripUuid }
+
             val tripEntity = TripEntity(
+                id = existingTrip?.id ?: 0,
                 uuid = tripUuid,
                 name = obj.getString("name"),
                 destination = obj.getString("destination"),
@@ -416,7 +430,13 @@ object BackupManager {
                 deletedAt = if (!obj.isNull("deletedAt")) obj.optLong("deletedAt") else null
             )
 
-            val newTripId = database.tripDao().insertTrip(tripEntity)
+            val newTripId = if (existingTrip != null) {
+                database.tripDao().updateTrip(tripEntity)
+                existingTrip.id
+            } else {
+                database.tripDao().insertTrip(tripEntity)
+            }
+
             if (oldId != -1L) {
                 oldToNewTripIdMap[oldId] = newTripId
             }
@@ -429,9 +449,14 @@ object BackupManager {
             val obj = checklistArray.getJSONObject(i)
             val oldTripId = obj.getLong("tripId")
             val newTripId = oldToNewTripIdMap[oldTripId] ?: continue
+            val itemUuid = obj.optString("uuid", UUID.randomUUID().toString())
+
+            val existingItems = database.checklistDao().getItemsForTripSync(newTripId)
+            val existingItem = existingItems.firstOrNull { it.uuid == itemUuid }
 
             val item = ChecklistItemEntity(
-                uuid = obj.optString("uuid", UUID.randomUUID().toString()),
+                id = existingItem?.id ?: 0,
+                uuid = itemUuid,
                 tripId = newTripId,
                 text = obj.getString("text"),
                 isCompleted = obj.optBoolean("isCompleted", false),
@@ -440,7 +465,12 @@ object BackupManager {
                 updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
                 deletedAt = if (!obj.isNull("deletedAt")) obj.optLong("deletedAt") else null
             )
-            database.checklistDao().insertItem(item)
+
+            if (existingItem != null) {
+                database.checklistDao().updateItem(item)
+            } else {
+                database.checklistDao().insertItem(item)
+            }
             importedChecklistItems++
         }
 
@@ -450,6 +480,7 @@ object BackupManager {
             val obj = momentsArray.getJSONObject(i)
             val oldTripId = obj.getLong("tripId")
             val newTripId = oldToNewTripIdMap[oldTripId] ?: continue
+            val momentUuid = obj.optString("uuid", UUID.randomUUID().toString())
 
             val imageFileName = if (!obj.isNull("imageFileName")) obj.optString("imageFileName") else null
             val rawImageUri = if (!obj.isNull("imageUri")) obj.optString("imageUri") else null
@@ -459,8 +490,12 @@ object BackupManager {
                 ?: rawImageUri?.let { restoredMediaMap[it] }
                 ?: rawImageUri)
 
+            val existingMoments = database.momentDao().getMomentsForTripSync(newTripId)
+            val existingMoment = existingMoments.firstOrNull { it.uuid == momentUuid }
+
             val moment = MomentEntity(
-                uuid = obj.optString("uuid", UUID.randomUUID().toString()),
+                id = existingMoment?.id ?: 0,
+                uuid = momentUuid,
                 tripId = newTripId,
                 category = obj.getString("category"),
                 note = obj.optString("note", ""),
@@ -493,10 +528,22 @@ object BackupManager {
                 maxImportedStampNumber = stampNum
             }
 
+            val existingStampForTrip = database.travelStampDao().getStampForTripSync(newTripId)
+            val existingStampByNumber = database.travelStampDao().getStampByNumberSync(stampNum)
+
+            val finalStampNumber = if (existingStampForTrip != null) {
+                existingStampForTrip.stampNumber
+            } else if (existingStampByNumber != null && existingStampByNumber.tripId != newTripId) {
+                database.travelStampDao().allocateNextStampNumber()
+            } else {
+                stampNum
+            }
+
             val stamp = TravelStampEntity(
+                id = existingStampForTrip?.id ?: 0,
                 uuid = obj.optString("uuid", UUID.randomUUID().toString()),
                 tripId = newTripId,
-                stampNumber = stampNum,
+                stampNumber = finalStampNumber,
                 stampCode = obj.getString("stampCode"),
                 title = obj.getString("title"),
                 destination = obj.getString("destination"),
@@ -525,7 +572,7 @@ object BackupManager {
             database.travelStampDao().setLastAllocatedSequence(StampSequenceEntity(id = "STAMP_COUNTER", lastAllocatedNumber = finalMax))
         }
 
-        return Result.success(
+        Result.success(
             BackupImportResult(
                 importedTrips = importedTrips,
                 importedStamps = importedStamps,

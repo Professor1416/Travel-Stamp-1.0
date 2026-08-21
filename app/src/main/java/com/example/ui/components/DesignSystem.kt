@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -507,4 +508,132 @@ fun TravelConfirmationDialog(
         shape = RoundedCornerShape(18.dp),
         containerColor = MaterialTheme.colorScheme.surface
     )
+}
+
+/**
+ * Meaningful, contextual loading state with progress indicator and warm styling.
+ */
+@Composable
+fun LoadingView(
+    message: String,
+    modifier: Modifier = Modifier,
+    testTag: String = "loading_indicator"
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag(testTag),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(Spacing.xxl)
+        ) {
+            CircularProgressIndicator(
+                color = Terracotta,
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(44.dp)
+            )
+            Spacer(modifier = Modifier.height(Spacing.lg))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                fontFamily = FontFamily.Serif
+            )
+        }
+    }
+}
+
+/**
+ * Clear, user-friendly error state with non-technical messaging and accessible Retry action.
+ */
+@Composable
+fun ErrorStateView(
+    title: String,
+    message: String,
+    modifier: Modifier = Modifier,
+    retryAction: (() -> Unit)? = null,
+    retryButtonText: String = "Retry",
+    backAction: (() -> Unit)? = null,
+    backButtonText: String = "Go Back",
+    testTag: String = "error_state_view"
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag(testTag)
+            .padding(Spacing.screenHorizontal),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.xxl)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "⚠️", fontSize = 28.sp)
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.lg))
+
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.xs))
+
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.xl))
+
+                if (retryAction != null) {
+                    TravelPrimaryButton(
+                        text = retryButtonText,
+                        onClick = retryAction,
+                        testTag = "error_retry_button"
+                    )
+                }
+
+                if (backAction != null) {
+                    if (retryAction != null) {
+                        Spacer(modifier = Modifier.height(Spacing.sm))
+                    }
+                    TravelOutlinedButton(
+                        text = backButtonText,
+                        onClick = backAction,
+                        testTag = "error_back_button"
+                    )
+                }
+            }
+        }
+    }
 }

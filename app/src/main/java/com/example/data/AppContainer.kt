@@ -28,7 +28,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val tripRepository: TripRepository by lazy {
-        TripRepositoryImpl(database.tripDao())
+        TripRepositoryImpl(database.tripDao(), database.momentDao(), context.applicationContext)
     }
 
     override val checklistRepository: ChecklistRepository by lazy {
@@ -36,7 +36,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val momentRepository: MomentRepository by lazy {
-        MomentRepositoryImpl(database.momentDao())
+        MomentRepositoryImpl(database.momentDao(), context.applicationContext)
     }
 
     override val travelStampRepository: TravelStampRepository by lazy {

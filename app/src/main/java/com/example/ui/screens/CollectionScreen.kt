@@ -84,7 +84,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.TravelStamp
 import com.example.data.model.Trip
 import com.example.data.model.TripStatus
+import com.example.data.util.DatePeriodFilter
 import com.example.data.util.DateUtils
+import com.example.data.util.JourneySortOption
+import com.example.data.util.MomentsFilter
+import com.example.data.util.SearchUtils
+import com.example.data.util.StampSortOption
+import com.example.data.util.StatusFilter
 import com.example.ui.components.CollectionStampItem
 import com.example.ui.components.EmptyStateView
 import com.example.ui.components.PassportSummaryCard
@@ -95,47 +101,6 @@ import com.example.ui.theme.OchreGold
 import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
 import java.time.LocalDate
-
-enum class StampSortOption(val displayName: String) {
-    NEWEST_FIRST("Newest First"),
-    OLDEST_FIRST("Oldest First"),
-    STAMP_NUMBER_DESC("Stamp Number: High → Low"),
-    STAMP_NUMBER_ASC("Stamp Number: Low → High"),
-    MOST_MOMENTS("Most Moments"),
-    LEAST_MOMENTS("Least Moments"),
-    NAME_ASC("Name: A → Z"),
-    NAME_DESC("Name: Z → A")
-}
-
-enum class JourneySortOption(val displayName: String) {
-    NEWEST_FIRST("Newest First"),
-    OLDEST_FIRST("Oldest First"),
-    UPCOMING_FIRST("Upcoming First"),
-    COMPLETED_FIRST("Completed First"),
-    MOST_MOMENTS("Most Moments"),
-    LEAST_MOMENTS("Least Moments"),
-    NAME_ASC("Name: A → Z"),
-    NAME_DESC("Name: Z → A")
-}
-
-enum class StatusFilter(val displayName: String) {
-    ALL("All"),
-    UPCOMING("Upcoming"),
-    IN_PROGRESS("In Progress"),
-    COMPLETED("Completed")
-}
-
-enum class MomentsFilter(val displayName: String) {
-    ALL("All"),
-    HAS_MOMENTS("Has Moments"),
-    NO_MOMENTS("No Moments")
-}
-
-enum class DatePeriodFilter(val displayName: String) {
-    ALL_TIME("All Time"),
-    THIS_MONTH("This Month"),
-    THIS_YEAR("This Year")
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -190,84 +155,30 @@ fun CollectionScreen(
     // Filtered & sorted stamps
     val filteredStamps by remember(stamps, searchQuery, stampSortOption, momentsFilter, datePeriodFilter, today) {
         derivedStateOf {
-            val query = searchQuery.trim().lowercase()
-            val filtered = stamps.filter { stamp ->
-                val matchesMoments = when (momentsFilter) {
-                    MomentsFilter.ALL -> true
-                    MomentsFilter.HAS_MOMENTS -> stamp.momentsCount > 0
-                    MomentsFilter.NO_MOMENTS -> stamp.momentsCount == 0
-                }
-                val matchesPeriod = matchesDatePeriod(stamp.dateText, datePeriodFilter, today)
-                val matchesSearch = matchesStampSearch(stamp, query)
-                matchesMoments && matchesPeriod && matchesSearch
-            }
-
-            when (stampSortOption) {
-                StampSortOption.NEWEST_FIRST -> filtered.sortedWith(compareByDescending<TravelStamp> { getStampEpoch(it) }.thenByDescending { it.stampNumber })
-                StampSortOption.OLDEST_FIRST -> filtered.sortedWith(compareBy<TravelStamp> { getStampEpoch(it) }.thenBy { it.stampNumber })
-                StampSortOption.STAMP_NUMBER_DESC -> filtered.sortedByDescending { it.stampNumber }
-                StampSortOption.STAMP_NUMBER_ASC -> filtered.sortedBy { it.stampNumber }
-                StampSortOption.MOST_MOMENTS -> filtered.sortedWith(compareByDescending<TravelStamp> { it.momentsCount }.thenByDescending { it.stampNumber })
-                StampSortOption.LEAST_MOMENTS -> filtered.sortedWith(compareBy<TravelStamp> { it.momentsCount }.thenBy { it.stampNumber })
-                StampSortOption.NAME_ASC -> filtered.sortedBy { it.title.lowercase() }
-                StampSortOption.NAME_DESC -> filtered.sortedByDescending { it.title.lowercase() }
-            }
+            SearchUtils.filterAndSortStamps(
+                stamps = stamps,
+                searchQuery = searchQuery,
+                sortOption = stampSortOption,
+                momentsFilter = momentsFilter,
+                datePeriodFilter = datePeriodFilter,
+                today = today
+            )
         }
     }
 
     // Filtered & sorted journeys
     val filteredTrips by remember(allTrips, stampsMap, searchQuery, journeySortOption, journeyStatusFilter, momentsFilter, datePeriodFilter, today) {
         derivedStateOf {
-            val query = searchQuery.trim().lowercase()
-            val filtered = allTrips.filter { trip ->
-                val matchesStatus = when (journeyStatusFilter) {
-                    StatusFilter.ALL -> true
-                    StatusFilter.UPCOMING -> trip.status == TripStatus.UPCOMING
-                    StatusFilter.IN_PROGRESS -> trip.status == TripStatus.IN_PROGRESS
-                    StatusFilter.COMPLETED -> trip.status == TripStatus.COMPLETED
-                }
-                val momentsCount = stampsMap[trip.id]?.momentsCount ?: 0
-                val matchesMoments = when (momentsFilter) {
-                    MomentsFilter.ALL -> true
-                    MomentsFilter.HAS_MOMENTS -> momentsCount > 0
-                    MomentsFilter.NO_MOMENTS -> momentsCount == 0
-                }
-                val matchesPeriod = matchesDatePeriod(trip.date, datePeriodFilter, today)
-                val matchesSearch = matchesTripSearch(trip, stampsMap[trip.id], query)
-
-                matchesStatus && matchesMoments && matchesPeriod && matchesSearch
-            }
-
-            when (journeySortOption) {
-                JourneySortOption.NEWEST_FIRST -> filtered.sortedWith(compareByDescending<Trip> { getTripEpoch(it) }.thenByDescending { it.id })
-                JourneySortOption.OLDEST_FIRST -> filtered.sortedWith(compareBy<Trip> { getTripEpoch(it) }.thenBy { it.id })
-                JourneySortOption.UPCOMING_FIRST -> filtered.sortedWith(
-                    compareBy<Trip> {
-                        when (it.status) {
-                            TripStatus.UPCOMING -> 0
-                            TripStatus.IN_PROGRESS -> 1
-                            TripStatus.COMPLETED -> 2
-                        }
-                    }.thenByDescending { getTripEpoch(it) }
-                )
-                JourneySortOption.COMPLETED_FIRST -> filtered.sortedWith(
-                    compareBy<Trip> {
-                        when (it.status) {
-                            TripStatus.COMPLETED -> 0
-                            TripStatus.IN_PROGRESS -> 1
-                            TripStatus.UPCOMING -> 2
-                        }
-                    }.thenByDescending { getTripEpoch(it) }
-                )
-                JourneySortOption.MOST_MOMENTS -> filtered.sortedWith(
-                    compareByDescending<Trip> { stampsMap[it.id]?.momentsCount ?: 0 }.thenByDescending { getTripEpoch(it) }
-                )
-                JourneySortOption.LEAST_MOMENTS -> filtered.sortedWith(
-                    compareBy<Trip> { stampsMap[it.id]?.momentsCount ?: 0 }.thenBy { getTripEpoch(it) }
-                )
-                JourneySortOption.NAME_ASC -> filtered.sortedBy { it.name.lowercase() }
-                JourneySortOption.NAME_DESC -> filtered.sortedByDescending { it.name.lowercase() }
-            }
+            SearchUtils.filterAndSortTrips(
+                trips = allTrips,
+                stampsMap = stampsMap,
+                searchQuery = searchQuery,
+                sortOption = journeySortOption,
+                statusFilter = journeyStatusFilter,
+                momentsFilter = momentsFilter,
+                datePeriodFilter = datePeriodFilter,
+                today = today
+            )
         }
     }
 
@@ -563,11 +474,21 @@ fun CollectionScreen(
                     }
                 } else if (filteredStamps.isEmpty()) {
                     item {
+                        val isSearchOnly = searchQuery.isNotBlank() && activeFiltersCount == 0
+                        val isFilterOnly = searchQuery.isBlank() && activeFiltersCount > 0
+                        val title = if (isFilterOnly) "No stamps match filters" else "No stamps found"
+                        val subtitle = if (isFilterOnly) {
+                            "Try changing or resetting your active filters."
+                        } else {
+                            "Try a different destination, location, or search term."
+                        }
+                        val cta = if (isFilterOnly) "Reset Filters" else "Clear Search"
+
                         EmptyStateView(
                             emoji = "🔎",
-                            title = "No stamps found",
-                            subtitle = "No travel stamps match your current search query or active filter settings.",
-                            actionText = "Clear Search & Filters",
+                            title = title,
+                            subtitle = subtitle,
+                            actionText = cta,
                             onActionClick = {
                                 searchQuery = ""
                                 momentsFilter = MomentsFilter.ALL
@@ -597,11 +518,21 @@ fun CollectionScreen(
                     }
                 } else if (filteredTrips.isEmpty()) {
                     item {
+                        val isSearchOnly = searchQuery.isNotBlank() && activeFiltersCount == 0
+                        val isFilterOnly = searchQuery.isBlank() && activeFiltersCount > 0
+                        val title = if (isFilterOnly) "No journeys match filters" else "No journeys found"
+                        val subtitle = if (isFilterOnly) {
+                            "Try changing or resetting your active filters."
+                        } else {
+                            "Try a different destination, location, or search term."
+                        }
+                        val cta = if (isFilterOnly) "Reset Filters" else "Clear Search"
+
                         EmptyStateView(
                             emoji = "🔎",
-                            title = "No journeys found",
-                            subtitle = "No travel journeys match your current search query or active filter settings.",
-                            actionText = "Clear Search & Filters",
+                            title = title,
+                            subtitle = subtitle,
+                            actionText = cta,
                             onActionClick = {
                                 searchQuery = ""
                                 journeyStatusFilter = StatusFilter.ALL
@@ -880,71 +811,5 @@ private fun SortOptionRow(
             )
         )
     }
-}
-
-private fun getTripEpoch(trip: Trip): Long {
-    val localDate = DateUtils.parseTripDate(trip.date)
-    return localDate?.toEpochDay() ?: (trip.createdAt / (1000 * 60 * 60 * 24))
-}
-
-private fun getStampEpoch(stamp: TravelStamp): Long {
-    val localDate = DateUtils.parseTripDate(stamp.dateText)
-    return localDate?.toEpochDay() ?: (stamp.issuedAt / (1000 * 60 * 60 * 24))
-}
-
-private fun matchesDatePeriod(dateStr: String?, period: DatePeriodFilter, today: LocalDate): Boolean {
-    if (period == DatePeriodFilter.ALL_TIME) return true
-    val date = DateUtils.parseTripDate(dateStr) ?: return false
-    return when (period) {
-        DatePeriodFilter.ALL_TIME -> true
-        DatePeriodFilter.THIS_MONTH -> date.year == today.year && date.month == today.month
-        DatePeriodFilter.THIS_YEAR -> date.year == today.year
-    }
-}
-
-private fun matchesStampSearch(stamp: TravelStamp, query: String): Boolean {
-    if (query.isBlank()) return true
-    val cleanQuery = query.trim().lowercase()
-
-    val numStr = stamp.stampNumber.toString()
-    val formattedCode = stamp.stampCode.lowercase()
-    val paddedNum = String.format("%03d", stamp.stampNumber)
-
-    return stamp.title.lowercase().contains(cleanQuery) ||
-            stamp.destination.lowercase().contains(cleanQuery) ||
-            stamp.dateText.lowercase().contains(cleanQuery) ||
-            formattedCode.contains(cleanQuery) ||
-            paddedNum.contains(cleanQuery) ||
-            numStr.contains(cleanQuery) ||
-            "#$numStr".contains(cleanQuery) ||
-            "#$paddedNum".contains(cleanQuery) ||
-            (stamp.reflectionNote?.lowercase()?.contains(cleanQuery) == true) ||
-            stamp.inspectionText.lowercase().contains(cleanQuery)
-}
-
-private fun matchesTripSearch(trip: Trip, associatedStamp: TravelStamp?, query: String): Boolean {
-    if (query.isBlank()) return true
-    val cleanQuery = query.trim().lowercase()
-
-    val matchesBase = trip.name.lowercase().contains(cleanQuery) ||
-            trip.destination.lowercase().contains(cleanQuery) ||
-            trip.description.lowercase().contains(cleanQuery) ||
-            trip.date.lowercase().contains(cleanQuery) ||
-            trip.status.name.lowercase().contains(cleanQuery)
-
-    if (matchesBase) return true
-
-    if (associatedStamp != null) {
-        val numStr = associatedStamp.stampNumber.toString()
-        val paddedNum = String.format("%03d", associatedStamp.stampNumber)
-        val matchesStamp = associatedStamp.stampCode.lowercase().contains(cleanQuery) ||
-                paddedNum.contains(cleanQuery) ||
-                numStr.contains(cleanQuery) ||
-                "#$numStr".contains(cleanQuery) ||
-                "#$paddedNum".contains(cleanQuery) ||
-                (associatedStamp.reflectionNote?.lowercase()?.contains(cleanQuery) == true)
-        if (matchesStamp) return true
-    }
-    return false
 }
 
