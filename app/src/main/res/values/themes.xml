@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <!-- Base application theme (restored immediately after splash) -->
     <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar" />
+
+    <!-- Official Travel Stamp AndroidX SplashScreen theme (compatible API 24 to 36) -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Forest Pine brand color #1E3A2F for splash window background -->
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <!-- Centered approved Travel Stamp Symbol-only logo -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <!-- Seamlessly switches to app theme once initialization completes -->
+        <item name="postSplashScreenTheme">@style/Theme.MyApplication</item>
+        <!-- Status and navigation bars match Forest Pine to prevent white flashes -->
+        <item name="android:statusBarColor">@color/ic_launcher_background</item>
+        <item name="android:navigationBarColor">@color/ic_launcher_background</item>
+    </style>
+
 </resources>

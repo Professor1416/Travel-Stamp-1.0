@@ -4535,7 +4535,29 @@ class ExampleRobolectricTest {
         assertNotNull(restoredWithoutTime)
         assertNull(restoredWithoutTime?.startTimeMinutes)
     }
+
+    @Test
+    fun `verify splash screen resources and theme configuration`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        
+        // 1. Verify splash background color resolves to Forest Pine #1E3A2F
+        val splashBgColor = context.getColor(R.color.ic_launcher_background)
+        assertEquals(0xFF1E3A2F.toInt(), splashBgColor)
+
+        // 2. Verify splash logo drawable resource exists
+        val splashLogoDrawable = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_splash_logo)
+        assertNotNull(splashLogoDrawable)
+
+        // 3. Verify adaptive launcher foreground exists
+        val launcherForeground = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_launcher_foreground)
+        assertNotNull(launcherForeground)
+
+        // 4. Verify Theme.App.Starting style resource identifier exists
+        val startingThemeId = context.resources.getIdentifier("Theme.App.Starting", "style", context.packageName)
+        assertTrue(startingThemeId != 0)
+    }
 }
+
 
 
 

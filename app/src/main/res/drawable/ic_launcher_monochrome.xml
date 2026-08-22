@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer Circular Stamp Frame (Material You Themed Monochrome Icon) -->
+    <path
+        android:pathData="M54,21 A33,33 0 1,0 54,87 A33,33 0 1,0 54,21"
+        android:strokeWidth="2.5"
+        android:strokeColor="#FFFFFF"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M54,25.5 A28.5,28.5 0 1,0 54,82.5 A28.5,28.5 0 1,0 54,25.5"
+        android:strokeWidth="1.2"
+        android:strokeColor="#FFFFFF"
+        android:fillColor="#00000000" />
+
+    <group>
+        <clip-path
+            android:pathData="M54,26 A28,28 0 1,0 54,82 A28,28 0 1,0 54,26" />
+
+        <!-- Sun disc -->
+        <path
+            android:pathData="M58.5,34 A4.5,4.5 0 1,0 58.5,43 A4.5,4.5 0 1,0 58.5,34"
+            android:fillColor="#55FFFFFF" />
+
+        <!-- Birds in upper sky -->
+        <path
+            android:pathData="M38,33 Q39.5,31.5 41,33 Q42.5,31.5 44,33 Q41,32 38,33 Z"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M43,36 Q44.2,34.8 45.5,36 Q46.8,34.8 48,36 Q45.5,35.2 43,36 Z"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M35,36 Q36,35 37,36 Q38,35 39,36 Q37,35.3 35,36 Z"
+            android:fillColor="#FFFFFF" />
+
+        <!-- Distant Mountain Peaks -->
+        <path
+            android:pathData="M26,58 L36,48 L48,56 L58,47 L70,56 L82,50 L82,62 L26,62 Z"
+            android:fillColor="#44FFFFFF" />
+
+        <!-- Fort Mountain Slope & Summit -->
+        <path
+            android:pathData="M50,76 L58,61 L64,44 L74,42 L80,52 L82,64 L82,80 L50,80 Z"
+            android:fillColor="#77FFFFFF" />
+
+        <!-- Stone Fortress Castle -->
+        <path
+            android:pathData="M61.5,43 L62,35.5 L74.5,35.5 L75,43 Z"
+            android:fillColor="#FFFFFF" />
+        <!-- Crenellations -->
+        <path
+            android:pathData="M61.5,35.5 H63.5 V33.8 H65 V35.5 H67 V33.8 H68.5 V35.5 H70.5 V33.8 H72 V35.5 H73.5 V33.8 H74.8 V35.5"
+            android:strokeWidth="1.2"
+            android:strokeColor="#FFFFFF"
+            android:fillColor="#FFFFFF" />
+        <!-- Fortress Portal / Gate -->
+        <path
+            android:pathData="M67.5,43 V39.5 C67.5,38.5 69.5,38.5 69.5,39.5 V43 Z"
+            android:fillColor="#000000" />
+
+        <!-- Flagpole & Fluttering Pennant -->
+        <path
+            android:pathData="M64.5,31 L64.5,24"
+            android:strokeWidth="1"
+            android:strokeColor="#FFFFFF" />
+        <path
+            android:pathData="M64.5,24.2 Q68,23.5 71.5,25.5 Q68,27.5 64.5,27.8 Z"
+            android:fillColor="#FFFFFF" />
+
+        <!-- Winding Mountain Trail -->
+        <path
+            android:pathData="M68.5,43 Q66.5,47 64,50 Q61,54 67,58 Q73,62 67,68 Q61,73 66,78"
+            android:strokeWidth="2.2"
+            android:strokeColor="#FFFFFF"
+            android:fillColor="#00000000" />
+
+        <!-- Pine Trees (Left & Right Flanks) -->
+        <path
+            android:pathData="M26,76 L29,54 L32,76 Z M28,77 L32,46 L36,77 Z M73,78 L76,64 L79,78 Z M76,78 L79,60 L82,78 Z"
+            android:fillColor="#99FFFFFF" />
+
+        <!-- Foreground Boulder Promontory -->
+        <path
+            android:pathData="M26,82 L28,75 L35,69 L44,67 L50,74 L52,82 Z"
+            android:fillColor="#AAFFFFFF" />
+
+        <!-- The Explorer / Hiker Silhouette -->
+        <!-- Legs & Boots -->
+        <path
+            android:pathData="M35.5,68 L34.5,75 L37,75 L37.5,68 Z M37.5,67 Q40,65 42,67 L41.5,72.5 L39.5,72.5 L39,68 Z"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M34,74.5 H37.5 V76 H33.5 Z M40,71.5 H43.2 V73.2 H39.5 Z"
+            android:fillColor="#FFFFFF" />
+
+        <!-- Backpack & Body -->
+        <path
+            android:pathData="M31.8,57.5 C31.8,55 35,55 35.5,57 L36,65 C36,66.5 32.5,66.5 32,65 Z"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M34.8,56.5 C35.8,55 39,55.5 40,57 L40.5,67.5 L36.5,67.5 Z"
+            android:fillColor="#FFFFFF" />
+
+        <!-- Cap & Head -->
+        <path
+            android:pathData="M37.5,54.5 C37.5,52.5 39.5,52 40.5,53 C41.2,53.8 41,55 40,55.5 Z"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M37,53 C37,51.2 39.5,51 41.5,51.8 L43.5,53 L41,53.5 Z"
+            android:fillColor="#FFFFFF" />
+
+        <!-- Arm & Trekking Pole -->
+        <path
+            android:pathData="M39.2,57.5 Q42,59 43.8,61.8 L42.5,62.5 Q41,60 38.5,58.5 Z"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M43.8,58.5 L43.8,74.5"
+            android:strokeWidth="1"
+            android:strokeColor="#FFFFFF" />
+    </group>
+</vector>
