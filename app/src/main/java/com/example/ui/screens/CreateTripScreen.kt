@@ -1,6 +1,17 @@
 package com.example.ui.screens
 
+import android.Manifest
 import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,7 +38,11 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,9 +51,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -58,6 +78,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.LocationSuggestion
+import com.example.data.model.TripReminderPreset
+import com.example.data.util.DateUtils
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelPrimaryButton
@@ -82,14 +107,24 @@ fun CreateTripScreen(
 
     var tripName by remember { mutableStateOf("") }
     var destination by remember { mutableStateOf("") }
+    val locationSuggestions by viewModel.locationSuggestions.collectAsStateWithLifecycle()
+    var showSuggestions by remember { mutableStateOf(true) }
 
     val defaultDateFormatted = remember {
         SimpleDateFormat("d MMMM yyyy", Locale.getDefault()).format(Date())
     }
     var tripDate by remember { mutableStateOf(defaultDateFormatted) }
+    var startTimeMinutes by remember { mutableStateOf<Int?>(null) }
     var peopleCount by remember { mutableIntStateOf(4) }
     var description by remember { mutableStateOf("") }
+    var reminderEnabled by remember { mutableStateOf(false) } // Default OFF per product decision
+    var reminderPreset by remember { mutableStateOf(TripReminderPreset.ONE_DAY_BEFORE) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { _ -> }
+    )
 
     val inspirationChips = listOf(
         "Harihar Fort" to "Nashik, Maharashtra",
@@ -267,6 +302,8 @@ fun CreateTripScreen(
                                 onValueChange = {
                                     tripName = it
                                     errorMessage = null
+                                    showSuggestions = true
+                                    viewModel.onTripNameQueryChanged(it)
                                 },
                                 placeholder = { Text("e.g. Harihar Fort Trek") },
                                 modifier = Modifier
@@ -280,6 +317,143 @@ fun CreateTripScreen(
                                     unfocusedBorderColor = MaterialTheme.colorScheme.outline
                                 )
                             )
+
+                            // Location Suggestions Dropdown/List (2+ chars)
+                            if (showSuggestions && tripName.trim().length >= 2 && locationSuggestions.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(Spacing.xs))
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("location_suggestions_container"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = Spacing.xs)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "SUGGESTED PLACES",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                letterSpacing = 0.5.sp
+                                            )
+                                            Text(
+                                                text = "Tap to autofill",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+
+                                        locationSuggestions.forEachIndexed { index, suggestion ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        tripName = suggestion.name
+                                                        destination = suggestion.destination
+                                                        showSuggestions = false
+                                                        viewModel.clearLocationSuggestions()
+                                                    }
+                                                    .padding(horizontal = Spacing.md, vertical = Spacing.sm)
+                                                    .testTag("location_suggestion_item_$index"),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Surface(
+                                                    shape = CircleShape,
+                                                    color = if (suggestion.isFromHistory) {
+                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                                    } else {
+                                                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)
+                                                    },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Text(
+                                                            text = if (suggestion.isFromHistory) "🕒" else suggestion.category.emoji,
+                                                            fontSize = 14.sp
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.width(Spacing.sm))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+                                                    ) {
+                                                        Text(
+                                                            text = suggestion.name,
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                            maxLines = 1,
+                                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                            modifier = Modifier.weight(1f, fill = false)
+                                                        )
+                                                        if (suggestion.isFromHistory) {
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                                             ) {
+                                                                Text(
+                                                                    text = "Previous",
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    color = MaterialTheme.colorScheme.primary,
+                                                                    fontSize = 9.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                )
+                                                            }
+                                                        } else {
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = MaterialTheme.colorScheme.surfaceVariant
+                                                            ) {
+                                                                Text(
+                                                                    text = suggestion.category.displayName,
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                    fontSize = 9.sp,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    Text(
+                                                        text = suggestion.destination,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                            if (index < locationSuggestions.lastIndex) {
+                                                androidx.compose.material3.HorizontalDivider(
+                                                    modifier = Modifier.padding(horizontal = Spacing.md),
+                                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Destination
@@ -321,7 +495,7 @@ fun CreateTripScreen(
                         // Date Selector
                         Column {
                             Text(
-                                text = "DATE *",
+                                text = "JOURNEY DATE *",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 letterSpacing = 0.5.sp
@@ -367,11 +541,251 @@ fun CreateTripScreen(
                                 }
                             }
                         }
+
+                        // Start Time Selector (Optional)
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "START TIME",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = "(Optional)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(Spacing.xs))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                color = MaterialTheme.colorScheme.surface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val initMin = startTimeMinutes ?: 420
+                                        TimePickerDialog(
+                                            context,
+                                            { _, hourOfDay, minute ->
+                                                startTimeMinutes = hourOfDay * 60 + minute
+                                            },
+                                            initMin / 60,
+                                            initMin % 60,
+                                            false
+                                        ).show()
+                                    }
+                                    .testTag("start_time_picker_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = null,
+                                            tint = if (startTimeMinutes != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(Spacing.md))
+                                        Text(
+                                            text = DateUtils.formatTimeMinutes(startTimeMinutes) ?: "Add start time",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (startTimeMinutes != null) FontWeight.Medium else FontWeight.Normal,
+                                            color = if (startTimeMinutes != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (startTimeMinutes != null) {
+                                        Text(
+                                            text = "Remove time",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.error,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier
+                                                .clickable { startTimeMinutes = null }
+                                                .padding(start = Spacing.sm)
+                                                .testTag("clear_start_time_button")
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Select",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(Spacing.xs))
+                            Text(
+                                text = "Optional • Used for timed departure & pre-trip reminders",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
             }
 
-            // GROUP 2: EXPEDITION DETAILS
+            // GROUP 2: PRE-TRIP REMINDER NOTIFICATIONS (OPTIONAL)
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("reminder_section_card"),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = if (reminderEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                                    contentDescription = null,
+                                    tint = if (reminderEnabled) ForestPine else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.sm))
+                                Column {
+                                    Text(
+                                        text = "Journey Reminder",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = if (reminderEnabled) "Notification active before trip" else "Disabled (Default)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Switch(
+                                checked = reminderEnabled,
+                                onCheckedChange = { isChecked ->
+                                    reminderEnabled = isChecked
+                                    if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        if (ContextCompat.checkSelfPermission(
+                                                context,
+                                                Manifest.permission.POST_NOTIFICATIONS
+                                            ) != PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.testTag("reminder_enable_switch"),
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = ForestPine
+                                )
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = reminderEnabled,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = Spacing.xs),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                Text(
+                                    text = "CHOOSE REMINDER TIMING",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 0.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                TripReminderPreset.entries.forEach { preset ->
+                                    val isSelected = reminderPreset == preset
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { reminderPreset = preset }
+                                            .testTag("reminder_preset_${preset.name}")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            RadioButton(
+                                                selected = isSelected,
+                                                onClick = { reminderPreset = preset },
+                                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                                            )
+                                            Spacer(modifier = Modifier.width(Spacing.xs))
+                                            Column {
+                                                Text(
+                                                    text = preset.displayName,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = preset.descriptionText,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    text = "🔒 100% offline & battery-friendly • Tapping the reminder opens this trip directly",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(top = Spacing.xs)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // GROUP 3: EXPEDITION DETAILS
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -531,8 +945,11 @@ fun CreateTripScreen(
                             name = trimmedName,
                             destination = trimmedDest,
                             date = tripDate,
+                            startTimeMinutes = startTimeMinutes,
                             peopleCount = peopleCount,
                             description = description.trim(),
+                            reminderEnabled = reminderEnabled,
+                            reminderPreset = reminderPreset,
                             onCreated = { newId ->
                                 onTripCreated(newId)
                             }
@@ -548,3 +965,4 @@ fun CreateTripScreen(
         }
     }
 }
+

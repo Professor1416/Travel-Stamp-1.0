@@ -15,6 +15,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,9 +35,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -49,9 +56,11 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,15 +73,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.data.model.HyperlinkUtils
 import com.example.data.model.MomentCategory
+import com.example.data.model.MomentHyperlink
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelPrimaryButton
@@ -80,25 +96,63 @@ import com.example.ui.theme.Terracotta
 import com.example.ui.util.PhotoUtils
 import com.example.ui.viewmodel.TravelViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddMomentScreen(
     tripId: Long,
     viewModel: TravelViewModel,
     onNavigateBack: () -> Unit,
+    momentId: Long? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val isEditMode = momentId != null && momentId > 0
 
-    // State preservation with rememberSaveable across configuration changes & process recreation
+    // State preservation across configuration changes & process recreation
     var selectedCategoryName by rememberSaveable { mutableStateOf(MomentCategory.PHOTO.name) }
-    var noteText by rememberSaveable { mutableStateOf("") }
+    var noteTextFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    var rawHyperlinksJson by rememberSaveable { mutableStateOf("[]") }
     var attachedImageUriString by rememberSaveable { mutableStateOf<String?>(null) }
     var tempCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraPermissionDeniedNotice by rememberSaveable { mutableStateOf(false) }
     var isPermanentlyDenied by rememberSaveable { mutableStateOf(false) }
     var isCameraLaunching by rememberSaveable { mutableStateOf(false) }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var isInitialDataLoaded by rememberSaveable { mutableStateOf(false) }
+
+    // Hyperlink Dialog State
+    var showLinkDialog by remember { mutableStateOf(false) }
+    var linkDialogStart by remember { mutableStateOf(0) }
+    var linkDialogEnd by remember { mutableStateOf(0) }
+    var linkDialogSelectedText by remember { mutableStateOf("") }
+    var linkDialogUrlInput by remember { mutableStateOf("") }
+    var linkDialogUrlError by remember { mutableStateOf<String?>(null) }
+    var isEditingExistingLink by remember { mutableStateOf(false) }
+
+    val hyperlinks = remember(rawHyperlinksJson) {
+        HyperlinkUtils.parseFromJson(rawHyperlinksJson)
+    }
+
+    fun updateHyperlinks(newLinks: List<MomentHyperlink>) {
+        rawHyperlinksJson = HyperlinkUtils.serializeToJson(newLinks)
+    }
+
+    // Load initial data if editing an existing moment
+    LaunchedEffect(momentId) {
+        if (isEditMode && !isInitialDataLoaded) {
+            val existing = viewModel.getMomentByIdSync(momentId!!)
+            if (existing != null) {
+                selectedCategoryName = existing.category.name
+                noteTextFieldValue = TextFieldValue(
+                    text = existing.note,
+                    selection = TextRange(existing.note.length)
+                )
+                updateHyperlinks(existing.hyperlinks)
+                attachedImageUriString = existing.imageUri
+            }
+            isInitialDataLoaded = true
+        }
+    }
 
     val selectedCategory = remember(selectedCategoryName) {
         MomentCategory.fromName(selectedCategoryName)
@@ -120,12 +174,10 @@ fun AddMomentScreen(
                 errorMessage = "Could not process captured photo. Please try again."
             }
         } else {
-            // Cancelled or failed capture - clean up empty temp file
             PhotoUtils.cleanUpTempFile(context, uriStr)
         }
     }
 
-    // Internal camera launch helper
     fun triggerCamera() {
         if (isCameraLaunching) return
         isCameraLaunching = true
@@ -134,13 +186,12 @@ fun AddMomentScreen(
             val uri = PhotoUtils.createCameraTempUri(context)
             tempCameraUriString = uri.toString()
             cameraLauncher.launch(uri)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             isCameraLaunching = false
             errorMessage = "Camera application is unavailable. You can choose a photo from your gallery."
         }
     }
 
-    // Camera Permission Request Launcher
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -159,7 +210,6 @@ fun AddMomentScreen(
         }
     }
 
-    // Android System Photo Picker Launcher
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -167,6 +217,60 @@ fun AddMomentScreen(
             val permanentPath = PhotoUtils.copyUriToPermanentStorage(context, uri)
             attachedImageUriString = permanentPath ?: uri.toString()
             errorMessage = null
+        }
+    }
+
+    // Handler when user clicks the "🔗 Link" button
+    fun onLinkActionClick() {
+        val currentText = noteTextFieldValue.text
+        val selection = noteTextFieldValue.selection
+
+        if (selection.collapsed) {
+            // Check if cursor is placed inside an existing link
+            val cursor = selection.start
+            val existingLink = hyperlinks.firstOrNull { cursor in it.startIndex..it.endIndex }
+            if (existingLink != null) {
+                val clampedStart = existingLink.startIndex.coerceIn(0, currentText.length)
+                val clampedEnd = existingLink.endIndex.coerceIn(0, currentText.length)
+                linkDialogStart = clampedStart
+                linkDialogEnd = clampedEnd
+                linkDialogSelectedText = currentText.substring(clampedStart, clampedEnd)
+                linkDialogUrlInput = existingLink.url
+                linkDialogUrlError = null
+                isEditingExistingLink = true
+                showLinkDialog = true
+            } else {
+                errorMessage = "Select the text you want to attach a link to."
+            }
+        } else {
+            val start = selection.min.coerceIn(0, currentText.length)
+            val end = selection.max.coerceIn(0, currentText.length)
+            val selectedText = currentText.substring(start, end).trim()
+
+            if (selectedText.isEmpty()) {
+                errorMessage = "Selected text cannot be empty or whitespace only."
+                return
+            }
+
+            // Check if this exact range or an overlapping range already has a link
+            val existingLink = hyperlinks.firstOrNull { it.startIndex < end && it.endIndex > start }
+            if (existingLink != null) {
+                linkDialogStart = start
+                linkDialogEnd = end
+                linkDialogSelectedText = currentText.substring(start, end)
+                linkDialogUrlInput = existingLink.url
+                linkDialogUrlError = null
+                isEditingExistingLink = true
+            } else {
+                linkDialogStart = start
+                linkDialogEnd = end
+                linkDialogSelectedText = currentText.substring(start, end)
+                linkDialogUrlInput = ""
+                linkDialogUrlError = null
+                isEditingExistingLink = false
+            }
+            errorMessage = null
+            showLinkDialog = true
         }
     }
 
@@ -178,7 +282,7 @@ fun AddMomentScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "ADD MOMENT",
+                        text = if (isEditMode) "EDIT MOMENT" else "ADD MOMENT",
                         style = MaterialTheme.typography.titleMedium,
                         letterSpacing = 1.sp
                     )
@@ -227,7 +331,6 @@ fun AddMomentScreen(
                     ) {
                         SectionHeader(title = "Moment Category", emoji = "🏷️")
 
-                        // 2-column grid for categories
                         val categories = MomentCategory.entries
                         for (i in categories.indices step 2) {
                             Row(
@@ -256,7 +359,7 @@ fun AddMomentScreen(
                 }
             }
 
-            // 2. Photo Attachment Section (Take Photo or Choose from Gallery)
+            // 2. Photo Attachment Section
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -276,7 +379,6 @@ fun AddMomentScreen(
                         SectionHeader(title = "Expedition Photo", emoji = "📸")
 
                         if (attachedImageUriString != null) {
-                            // Attached photo preview
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -312,7 +414,6 @@ fun AddMomentScreen(
                                 }
                             }
                         } else {
-                            // Two obvious options: Take Photo / Choose From Gallery
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.md)
@@ -395,7 +496,6 @@ fun AddMomentScreen(
                                 }
                             }
 
-                            // Graceful camera denial UX with direct actions
                             if (cameraPermissionDeniedNotice) {
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
@@ -471,7 +571,7 @@ fun AddMomentScreen(
                 }
             }
 
-            // 3. Field: Note Text
+            // 3. Field: Note Text with Hyperlink Toolbar & Attached Link Chips
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -488,20 +588,68 @@ fun AddMomentScreen(
                             .padding(Spacing.cardPadding),
                         verticalArrangement = Arrangement.spacedBy(Spacing.md)
                     ) {
-                        SectionHeader(title = "Moment Note", emoji = "📝")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SectionHeader(title = "Moment Note", emoji = "📝")
+
+                            // Hyperlink action button
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                modifier = Modifier
+                                    .clickable { onLinkActionClick() }
+                                    .testTag("toolbar_link_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Link,
+                                        contentDescription = "Attach web link to selected text",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "LINK",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        letterSpacing = 0.6.sp
+                                    )
+                                }
+                            }
+                        }
 
                         OutlinedTextField(
-                            value = noteText,
-                            onValueChange = {
-                                noteText = it
+                            value = noteTextFieldValue,
+                            onValueChange = { newValue ->
+                                val oldText = noteTextFieldValue.text
+                                val newText = newValue.text
+
+                                // Range integrity: automatically adjust hyperlink spans when typing or editing
+                                if (oldText != newText && hyperlinks.isNotEmpty()) {
+                                    val adjusted = HyperlinkUtils.adjustHyperlinksOnTextChange(
+                                        oldText = oldText,
+                                        newText = newText,
+                                        existingLinks = hyperlinks
+                                    )
+                                    updateHyperlinks(adjusted)
+                                }
+
+                                noteTextFieldValue = newValue
                                 errorMessage = null
                             },
-                            placeholder = { Text("e.g. Reached the stone ridge stairs right as morning fog lifted.") },
+                            placeholder = { Text("e.g. Reached the stone ridge stairs right as morning fog lifted. Coordinates on Google Maps.") },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("moment_note_input"),
                             minLines = 3,
-                            maxLines = 6,
+                            maxLines = 8,
                             shape = RoundedCornerShape(12.dp),
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -509,6 +657,95 @@ fun AddMomentScreen(
                                 unfocusedBorderColor = MaterialTheme.colorScheme.outline
                             )
                         )
+
+                        // Attached Hyperlinks Chips list
+                        if (hyperlinks.isNotEmpty()) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "ATTACHED LINKS (${hyperlinks.size})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 0.5.sp
+                                )
+
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    hyperlinks.forEachIndexed { index, link ->
+                                        val clampedStart = link.startIndex.coerceIn(0, noteTextFieldValue.text.length)
+                                        val clampedEnd = link.endIndex.coerceIn(0, noteTextFieldValue.text.length)
+                                        val labelText = if (clampedStart < clampedEnd) {
+                                            noteTextFieldValue.text.substring(clampedStart, clampedEnd)
+                                        } else {
+                                            "Link #${index + 1}"
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            border = androidx.compose.foundation.BorderStroke(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                            ),
+                                            modifier = Modifier
+                                                .clickable {
+                                                    linkDialogStart = clampedStart
+                                                    linkDialogEnd = clampedEnd
+                                                    linkDialogSelectedText = labelText
+                                                    linkDialogUrlInput = link.url
+                                                    linkDialogUrlError = null
+                                                    isEditingExistingLink = true
+                                                    showLinkDialog = true
+                                                }
+                                                .testTag("hyperlink_chip_$index")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Link,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = labelText,
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.widthIn(max = 140.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                IconButton(
+                                                    onClick = {
+                                                        val updated = hyperlinks.filterIndexed { i, _ -> i != index }
+                                                        updateHyperlinks(updated)
+                                                    },
+                                                    modifier = Modifier.size(20.dp).testTag("delete_hyperlink_chip_$index")
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Remove link",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -517,7 +754,7 @@ fun AddMomentScreen(
             if (errorMessage != null) {
                 item {
                     Surface(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("add_moment_error_banner"),
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.errorContainer
                     ) {
@@ -531,24 +768,42 @@ fun AddMomentScreen(
                 }
             }
 
-            // Primary Action: SAVE MOMENT
+            // Primary Action: SAVE / UPDATE MOMENT
             item {
                 TravelPrimaryButton(
-                    text = "SAVE MOMENT",
+                    text = if (isEditMode) "UPDATE MOMENT" else "SAVE MOMENT",
                     onClick = {
-                        val trimmedNote = noteText.trim()
-                        if (trimmedNote.isBlank() && attachedImageUriString.isNullOrBlank()) {
+                        val fullNoteText = noteTextFieldValue.text.trim()
+                        if (fullNoteText.isBlank() && attachedImageUriString.isNullOrBlank()) {
                             errorMessage = "Please enter a note or attach a photo."
                             return@TravelPrimaryButton
                         }
 
-                        viewModel.addMoment(
-                            tripId = tripId,
-                            category = selectedCategory,
-                            note = trimmedNote,
-                            imageUri = attachedImageUriString,
-                            onSaved = { onNavigateBack() }
+                        val cleanedSpans = HyperlinkUtils.cleanupAndDeduplicateSpans(
+                            hyperlinks,
+                            fullNoteText.length
                         )
+
+                        if (isEditMode) {
+                            viewModel.updateMoment(
+                                momentId = momentId!!,
+                                tripId = tripId,
+                                category = selectedCategory,
+                                note = fullNoteText,
+                                hyperlinks = cleanedSpans,
+                                imageUri = attachedImageUriString,
+                                onSaved = { onNavigateBack() }
+                            )
+                        } else {
+                            viewModel.addMoment(
+                                tripId = tripId,
+                                category = selectedCategory,
+                                note = fullNoteText,
+                                hyperlinks = cleanedSpans,
+                                imageUri = attachedImageUriString,
+                                onSaved = { onNavigateBack() }
+                            )
+                        }
                     },
                     testTag = "submit_add_moment_button"
                 )
@@ -558,6 +813,138 @@ fun AddMomentScreen(
                 Spacer(modifier = Modifier.height(Spacing.lg))
             }
         }
+    }
+
+    // Add / Edit / Remove Link Dialog
+    if (showLinkDialog) {
+        AlertDialog(
+            onDismissRequest = { showLinkDialog = false },
+            title = {
+                Text(
+                    text = if (isEditingExistingLink) "Edit Hyperlink" else "Add Hyperlink",
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                ) {
+                    // Selected text being linked
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(Spacing.sm)) {
+                            Text(
+                                text = "TEXT TO LINK",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = linkDialogSelectedText.ifBlank { "Selected text" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = linkDialogUrlInput,
+                        onValueChange = {
+                            linkDialogUrlInput = it
+                            linkDialogUrlError = null
+                        },
+                        label = { Text("Web URL (HTTP / HTTPS)") },
+                        placeholder = { Text("https://maps.app.goo.gl/...") },
+                        isError = linkDialogUrlError != null,
+                        supportingText = {
+                            if (linkDialogUrlError != null) {
+                                Text(
+                                    text = linkDialogUrlError!!,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            } else {
+                                Text(
+                                    text = "Supported: http:// and https:// links",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            autoCorrectEnabled = false
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("hyperlink_url_input"),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val normalized = HyperlinkUtils.normalizeUrl(linkDialogUrlInput)
+                        if (normalized == null) {
+                            linkDialogUrlError = "Enter a valid web link (http:// or https://)."
+                            return@Button
+                        }
+
+                        val newLink = MomentHyperlink(
+                            startIndex = linkDialogStart,
+                            endIndex = linkDialogEnd,
+                            url = normalized
+                        )
+
+                        // Filter out any existing spans that overlap with this range
+                        val remaining = hyperlinks.filterNot { existing ->
+                            existing.startIndex < linkDialogEnd && existing.endIndex > linkDialogStart
+                        }
+
+                        val updated = (remaining + newLink).sortedBy { it.startIndex }
+                        updateHyperlinks(updated)
+                        showLinkDialog = false
+                    },
+                    modifier = Modifier.testTag("save_hyperlink_button")
+                ) {
+                    Text(if (isEditingExistingLink) "Update Link" else "Attach Link")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (isEditingExistingLink) {
+                        TextButton(
+                            onClick = {
+                                // Remove hyperlink metadata without deleting the visible text
+                                val updated = hyperlinks.filterNot { existing ->
+                                    existing.startIndex < linkDialogEnd && existing.endIndex > linkDialogStart
+                                }
+                                updateHyperlinks(updated)
+                                showLinkDialog = false
+                            },
+                            modifier = Modifier.testTag("remove_hyperlink_button")
+                        ) {
+                            Text("Remove Link", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    TextButton(
+                        onClick = { showLinkDialog = false },
+                        modifier = Modifier.testTag("cancel_hyperlink_button")
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
     }
 }
 

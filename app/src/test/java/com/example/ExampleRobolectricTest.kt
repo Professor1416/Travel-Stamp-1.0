@@ -50,7 +50,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [34])
 class ExampleRobolectricTest {
 
     private lateinit var db: TravelStampDatabase
@@ -605,16 +605,9 @@ class ExampleRobolectricTest {
         sqliteDb.execSQL("INSERT INTO travel_stamps (id, tripId, stampNumber, stampCode, title, destination, dateText, peopleCount, momentsCount, inkColorHex, stampStyle, inspectionText, issuedAt, reflectionNote) VALUES (1, 1, 1, '#001', 'V1 Old Trip', 'Himalayas', '10 May 2025', 2, 1, '#1E3A2F', 'MOUNTAIN', 'OFFICIALLY LOGGED', 1746864000000, 'Legacy reflection')")
         sqliteDb.close()
 
-        // Now open with Room using version 4 and our migrations
+        // Now open with Room using version 5 and our migrations
         val migratedDb = Room.databaseBuilder(context, TravelStampDatabase::class.java, dbFile.absolutePath)
-            .addMigrations(
-                TravelStampDatabase.MIGRATION_1_2,
-                TravelStampDatabase.MIGRATION_2_3,
-                TravelStampDatabase.MIGRATION_3_4,
-                TravelStampDatabase.MIGRATION_1_4,
-                TravelStampDatabase.MIGRATION_2_4,
-                TravelStampDatabase.MIGRATION_1_3
-            )
+            .addMigrations(*TravelStampDatabase.ALL_MIGRATIONS)
             .build()
 
         val trips = migratedDb.tripDao().getAllTripsListSync()
@@ -1023,14 +1016,7 @@ class ExampleRobolectricTest {
     fun `verify database migration full migration execution across all legacy schemas`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val migrationDb = Room.inMemoryDatabaseBuilder(context, TravelStampDatabase::class.java)
-            .addMigrations(
-                TravelStampDatabase.MIGRATION_1_2,
-                TravelStampDatabase.MIGRATION_2_3,
-                TravelStampDatabase.MIGRATION_3_4,
-                TravelStampDatabase.MIGRATION_1_4,
-                TravelStampDatabase.MIGRATION_2_4,
-                TravelStampDatabase.MIGRATION_1_3
-            )
+            .addMigrations(*TravelStampDatabase.ALL_MIGRATIONS)
             .build()
 
         assertNotNull(migrationDb.tripDao())
@@ -1499,14 +1485,7 @@ class ExampleRobolectricTest {
     fun `TEST 11 - verify schema migrations across all database versions preserve referential integrity`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val migrationDb = Room.inMemoryDatabaseBuilder(context, TravelStampDatabase::class.java)
-            .addMigrations(
-                TravelStampDatabase.MIGRATION_1_2,
-                TravelStampDatabase.MIGRATION_2_3,
-                TravelStampDatabase.MIGRATION_3_4,
-                TravelStampDatabase.MIGRATION_1_4,
-                TravelStampDatabase.MIGRATION_2_4,
-                TravelStampDatabase.MIGRATION_1_3
-            )
+            .addMigrations(*TravelStampDatabase.ALL_MIGRATIONS)
             .build()
 
         assertNotNull(migrationDb.tripDao())
@@ -4390,6 +4369,171 @@ class ExampleRobolectricTest {
         assertEquals(initialStamp.id, successState.stamp.id)
         assertEquals(initialStamp.stampCode, successState.stamp.stampCode)
         assertEquals(1, stampRepo.getStampsCountSync())
+    }
+
+    @Test
+    fun test_dateUtils_formatTimeMinutes_formatting() {
+        assertEquals("12:00 AM", DateUtils.formatTimeMinutes(0))
+        assertEquals("5:30 AM", DateUtils.formatTimeMinutes(330))
+        assertEquals("6:00 AM", DateUtils.formatTimeMinutes(360))
+        assertEquals("12:00 PM", DateUtils.formatTimeMinutes(720))
+        assertEquals("1:45 PM", DateUtils.formatTimeMinutes(825))
+        assertEquals("11:59 PM", DateUtils.formatTimeMinutes(1439))
+        assertNull(DateUtils.formatTimeMinutes(null))
+        assertNull(DateUtils.formatTimeMinutes(-1))
+        assertNull(DateUtils.formatTimeMinutes(1440))
+    }
+
+    @Test
+    fun test_dateUtils_formatTripDateWithTime() {
+        assertEquals("14 Aug 2026", DateUtils.formatTripDateWithTime("14 Aug 2026", null))
+        assertEquals("14 Aug 2026 • 6:30 AM", DateUtils.formatTripDateWithTime("14 Aug 2026", 390))
+        assertEquals("15 Dec 2026 • 4:15 PM", DateUtils.formatTripDateWithTime("15 Dec 2026", 975))
+    }
+
+    @Test
+    fun test_tripWithStartTime_crudAndPersistence() = runBlocking {
+        val tripWithTime = Trip(
+            name = "Korigad Trek",
+            destination = "Aamby Valley, Lonavala",
+            date = "20 Aug 2026",
+            startTimeMinutes = 360, // 6:00 AM
+            peopleCount = 4
+        )
+        val tripId = tripRepo.createTrip(tripWithTime)
+        val loaded = tripRepo.getTripById(tripId).first()
+        assertNotNull(loaded)
+        assertEquals(360, loaded?.startTimeMinutes)
+
+        // Update to clear start time
+        val updatedWithoutTime = loaded!!.copy(startTimeMinutes = null)
+        tripRepo.updateTrip(updatedWithoutTime)
+        val reloaded = tripRepo.getTripById(tripId).first()
+        assertNotNull(reloaded)
+        assertNull(reloaded?.startTimeMinutes)
+
+        // Update to set afternoon time
+        val updatedWithAfternoonTime = reloaded!!.copy(startTimeMinutes = 870) // 2:30 PM
+        tripRepo.updateTrip(updatedWithAfternoonTime)
+        val finalReload = tripRepo.getTripById(tripId).first()
+        assertNotNull(finalReload)
+        assertEquals(870, finalReload?.startTimeMinutes)
+    }
+
+    @Test
+    fun test_tripStartTime_editDoesNotAlterOfficialStamp() = runBlocking {
+        val trip = Trip(
+            name = "Harishchandragad Peak",
+            destination = "Khireshwar",
+            date = "01 Aug 2026",
+            startTimeMinutes = 330, // 5:30 AM
+            status = TripStatus.IN_PROGRESS
+        )
+        val tripId = tripRepo.createTrip(trip)
+
+        // Issue official stamp
+        val stamp = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Harishchandragad Peak",
+            destination = "Khireshwar",
+            dateText = "01 Aug 2026",
+            peopleCount = 1,
+            momentsCount = 0,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "CLASSIC",
+            reflectionNote = "Trek completed"
+        ).getOrThrow()
+
+        val initialStampCode = stamp.stampCode
+        val initialStampNumber = stamp.stampNumber
+        val initialIssuedAt = stamp.issuedAt
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = UserPreferencesRepositoryImpl(context),
+            database = db
+        )
+
+        // User edits start time from 5:30 AM to 6:45 AM (405 min)
+        var updateCompleted = false
+        vm.updateTrip(
+            tripId = tripId,
+            name = "Harishchandragad Peak",
+            destination = "Khireshwar",
+            date = "01 Aug 2026",
+            startTimeMinutes = 405,
+            peopleCount = 1,
+            description = "Updated description",
+            onUpdated = {
+                updateCompleted = true
+            }
+        )
+
+        var waitAttempts = 0
+        while (!updateCompleted && waitAttempts < 20) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            delay(50)
+            waitAttempts++
+        }
+
+        val updatedTrip = tripRepo.getTripById(tripId).first()
+        assertNotNull(updatedTrip)
+        assertEquals(405, updatedTrip?.startTimeMinutes)
+        assertEquals(TripStatus.COMPLETED, updatedTrip?.status)
+        assertTrue(updatedTrip?.stampEarned == true)
+
+        // Verify stamp was NOT modified or regenerated
+        val preservedStamp = stampRepo.getStampForTrip(tripId).first()
+        assertNotNull(preservedStamp)
+        assertEquals(initialStampCode, preservedStamp?.stampCode)
+        assertEquals(initialStampNumber, preservedStamp?.stampNumber)
+        assertEquals(initialIssuedAt, preservedStamp?.issuedAt)
+        assertEquals(1, stampRepo.getStampsCountSync())
+    }
+
+    @Test
+    fun test_backupRestore_withAndWithoutStartTime() = runBlocking {
+        val tripWithTime = Trip(
+            name = "Sinhagad Sunrise",
+            destination = "Pune",
+            date = "10 Aug 2026",
+            startTimeMinutes = 300, // 5:00 AM
+            peopleCount = 2
+        )
+        val tripWithoutTime = Trip(
+            name = "Rajgad Sunset",
+            destination = "Gunjavane",
+            date = "15 Aug 2026",
+            startTimeMinutes = null,
+            peopleCount = 3
+        )
+        val id1 = tripRepo.createTrip(tripWithTime)
+        val id2 = tripRepo.createTrip(tripWithoutTime)
+
+        val backupJson = BackupManager.generateBackupJson(db)
+        assertNotNull(backupJson)
+        assertTrue(backupJson.contains("startTimeMinutes"))
+
+        // Clear and restore
+        tripRepo.deleteTrip(id1)
+        tripRepo.deleteTrip(id2)
+
+        val importResult = BackupManager.importBackupJson(db, backupJson)
+        assertTrue(importResult.isSuccess)
+
+        val restoredTrips = tripRepo.getAllTrips().first()
+        val restoredWithTime = restoredTrips.find { it.name == "Sinhagad Sunrise" }
+        val restoredWithoutTime = restoredTrips.find { it.name == "Rajgad Sunset" }
+
+        assertNotNull(restoredWithTime)
+        assertEquals(300, restoredWithTime?.startTimeMinutes)
+
+        assertNotNull(restoredWithoutTime)
+        assertNull(restoredWithoutTime?.startTimeMinutes)
     }
 }
 

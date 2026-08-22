@@ -10,6 +10,8 @@ import com.example.data.local.entity.MomentEntity
 import com.example.data.local.entity.StampSequenceEntity
 import com.example.data.local.entity.TravelStampEntity
 import com.example.data.local.entity.TripEntity
+import com.example.data.model.HyperlinkUtils
+import com.example.data.model.MomentHyperlink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -70,10 +72,14 @@ object BackupManager {
                 put("name", trip.name)
                 put("destination", trip.destination)
                 put("date", trip.date)
+                put("startTimeMinutes", trip.startTimeMinutes ?: JSONObject.NULL)
                 put("peopleCount", trip.peopleCount)
                 put("description", trip.description)
                 put("status", trip.status)
                 put("stampEarned", trip.stampEarned)
+                put("reminderEnabled", trip.reminderEnabled)
+                put("reminderPreset", trip.reminderPreset)
+                put("reminderTimeMinutes", trip.reminderTimeMinutes ?: JSONObject.NULL)
                 put("createdAt", trip.createdAt)
                 put("updatedAt", trip.updatedAt)
                 put("completedAt", trip.completedAt ?: JSONObject.NULL)
@@ -116,6 +122,17 @@ object BackupManager {
                 put("tripId", moment.tripId)
                 put("category", moment.category)
                 put("note", moment.note)
+                put("hyperlinksJson", moment.hyperlinksJson ?: JSONObject.NULL)
+                val domainLinks = HyperlinkUtils.parseFromJson(moment.hyperlinksJson)
+                val hyperlinksArray = JSONArray()
+                domainLinks.forEach { link ->
+                    hyperlinksArray.put(JSONObject().apply {
+                        put("startIndex", link.startIndex)
+                        put("endIndex", link.endIndex)
+                        put("url", link.url)
+                    })
+                }
+                put("hyperlinks", hyperlinksArray)
                 put("imageUri", moment.imageUri ?: JSONObject.NULL)
                 put("imageFileName", mappedImageName ?: JSONObject.NULL)
                 put("timestamp", moment.timestamp)
@@ -413,6 +430,12 @@ object BackupManager {
             val isCompleted = rawStatus == "COMPLETED"
 
             val existingTrip = existingTrips.firstOrNull { it.uuid == tripUuid }
+            val rawStartTime = if (obj.has("startTimeMinutes") && !obj.isNull("startTimeMinutes")) {
+                obj.optInt("startTimeMinutes")
+            } else {
+                null
+            }
+            val validStartTime = rawStartTime?.takeIf { it in 0..1439 }
 
             val tripEntity = TripEntity(
                 id = existingTrip?.id ?: 0,
@@ -420,10 +443,16 @@ object BackupManager {
                 name = obj.getString("name"),
                 destination = obj.getString("destination"),
                 date = tripDate,
+                startTimeMinutes = validStartTime,
                 peopleCount = obj.optInt("peopleCount", 1),
                 description = obj.optString("description", ""),
                 status = if (isCompleted) "COMPLETED" else if (isFuture) "UPCOMING" else "IN_PROGRESS",
                 stampEarned = isCompleted && obj.optBoolean("stampEarned", true),
+                reminderEnabled = obj.optBoolean("reminderEnabled", false),
+                reminderPreset = obj.optString("reminderPreset", "ONE_DAY_BEFORE"),
+                reminderTimeMinutes = if (obj.has("reminderTimeMinutes") && !obj.isNull("reminderTimeMinutes")) {
+                    obj.optInt("reminderTimeMinutes").takeIf { it in 0..1439 }
+                } else null,
                 createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                 updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
                 completedAt = if (isCompleted && !obj.isNull("completedAt")) obj.optLong("completedAt") else null,
@@ -493,12 +522,35 @@ object BackupManager {
             val existingMoments = database.momentDao().getMomentsForTripSync(newTripId)
             val existingMoment = existingMoments.firstOrNull { it.uuid == momentUuid }
 
+            val rawLinksArray = obj.optJSONArray("hyperlinks")
+            val restoredHyperlinksJson = when {
+                rawLinksArray != null && rawLinksArray.length() > 0 -> {
+                    val list = mutableListOf<com.example.data.model.MomentHyperlink>()
+                    for (h in 0 until rawLinksArray.length()) {
+                        val hObj = rawLinksArray.getJSONObject(h)
+                        val start = hObj.getInt("startIndex")
+                        val end = hObj.getInt("endIndex")
+                        val url = hObj.getString("url")
+                        val normalized = HyperlinkUtils.normalizeUrl(url)
+                        if (start in 0 until end && normalized != null) {
+                            list.add(com.example.data.model.MomentHyperlink(start, end, normalized))
+                        }
+                    }
+                    if (list.isNotEmpty()) HyperlinkUtils.serializeToJson(list) else null
+                }
+                obj.has("hyperlinksJson") && !obj.isNull("hyperlinksJson") -> {
+                    obj.optString("hyperlinksJson")
+                }
+                else -> null
+            }
+
             val moment = MomentEntity(
                 id = existingMoment?.id ?: 0,
                 uuid = momentUuid,
                 tripId = newTripId,
                 category = obj.getString("category"),
                 note = obj.optString("note", ""),
+                hyperlinksJson = restoredHyperlinksJson,
                 imageUri = finalImageUri,
                 timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
                 createdAt = obj.optLong("createdAt", System.currentTimeMillis()),

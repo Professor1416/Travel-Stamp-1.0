@@ -13,12 +13,18 @@ import com.example.data.local.AppThemeMode
 import com.example.data.local.TravelStampDatabase
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.model.ChecklistItem
+import com.example.data.model.LocationSuggestion
 import com.example.data.model.Moment
 import com.example.data.model.MomentCategory
+import com.example.data.model.MomentHyperlink
+import com.example.data.model.HyperlinkUtils
 import com.example.data.model.TravelStamp
 import com.example.data.model.Trip
+import com.example.data.model.TripReminderPreset
 import com.example.data.model.TripStatus
 import com.example.data.repository.ChecklistRepository
+import com.example.data.repository.LocationSuggestionRepository
+import com.example.data.repository.LocationSuggestionRepositoryImpl
 import com.example.data.repository.MomentRepository
 import com.example.data.repository.TravelStampRepository
 import com.example.data.repository.TripRepository
@@ -54,14 +60,40 @@ class TravelViewModel(
     private val momentRepository: MomentRepository,
     private val travelStampRepository: TravelStampRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
-    private val database: TravelStampDatabase
+    private val database: TravelStampDatabase,
+    private val locationSuggestionRepository: LocationSuggestionRepository = LocationSuggestionRepositoryImpl(tripRepository)
 ) : ViewModel() {
 
     val hasCompletedOnboarding: StateFlow<Boolean> = userPreferencesRepository.hasCompletedOnboarding
     val themeMode: StateFlow<AppThemeMode> = userPreferencesRepository.themeMode
+    val preTripRemindersEnabled: StateFlow<Boolean> = userPreferencesRepository.preTripRemindersEnabled
 
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
+
+    // Location Suggestions State
+    private val _locationSuggestions = MutableStateFlow<List<LocationSuggestion>>(emptyList())
+    val locationSuggestions: StateFlow<List<LocationSuggestion>> = _locationSuggestions.asStateFlow()
+    private var searchSuggestionsJob: Job? = null
+
+    fun onTripNameQueryChanged(query: String) {
+        searchSuggestionsJob?.cancel()
+        val trimmed = query.trim()
+        if (trimmed.length < 2) {
+            _locationSuggestions.value = emptyList()
+            return
+        }
+
+        searchSuggestionsJob = viewModelScope.launch {
+            val results = locationSuggestionRepository.searchSuggestions(trimmed)
+            _locationSuggestions.value = results
+        }
+    }
+
+    fun clearLocationSuggestions() {
+        searchSuggestionsJob?.cancel()
+        _locationSuggestions.value = emptyList()
+    }
 
     // Concurrency & state guards for trip completion
     private var finishTripJob: Job? = null
@@ -171,6 +203,10 @@ class TravelViewModel(
         userPreferencesRepository.setThemeMode(mode)
     }
 
+    fun setPreTripRemindersEnabled(enabled: Boolean) {
+        userPreferencesRepository.setPreTripRemindersEnabled(enabled)
+    }
+
     fun selectTrip(tripId: Long) {
         _selectedTripId.value = tripId
     }
@@ -179,8 +215,12 @@ class TravelViewModel(
         name: String,
         destination: String,
         date: String,
+        startTimeMinutes: Int? = null,
         peopleCount: Int,
         description: String,
+        reminderEnabled: Boolean = false,
+        reminderPreset: TripReminderPreset = TripReminderPreset.ONE_DAY_BEFORE,
+        reminderTimeMinutes: Int? = null,
         onCreated: (Long) -> Unit
     ) {
         if (_isProcessing.value) return
@@ -194,15 +234,22 @@ class TravelViewModel(
                     TripStatus.IN_PROGRESS
                 }
 
+                val validStartTime = startTimeMinutes?.takeIf { it in 0..1439 }
+                val validReminderTime = reminderTimeMinutes?.takeIf { it in 0..1439 }
+
                 val trip = Trip(
                     name = name.trim(),
                     destination = destination.trim(),
                     date = date.trim(),
+                    startTimeMinutes = validStartTime,
                     peopleCount = if (peopleCount < 1) 1 else peopleCount,
                     description = description.trim(),
                     status = initialStatus,
                     stampEarned = false,
                     completedAt = null,
+                    reminderEnabled = reminderEnabled,
+                    reminderPreset = reminderPreset,
+                    reminderTimeMinutes = validReminderTime,
                     createdAt = System.currentTimeMillis()
                 )
                 val newTripId = tripRepository.createTrip(trip)
@@ -213,6 +260,59 @@ class TravelViewModel(
             } finally {
                 _isProcessing.value = false
             }
+        }
+    }
+
+    fun updateTrip(trip: Trip, onUpdated: () -> Unit = {}) {
+        viewModelScope.launch {
+            tripRepository.updateTrip(trip.copy(updatedAt = System.currentTimeMillis()))
+            onUpdated()
+        }
+    }
+
+    fun updateTripDetails(
+        tripId: Long,
+        name: String,
+        destination: String,
+        date: String,
+        startTimeMinutes: Int?,
+        peopleCount: Int,
+        description: String,
+        reminderEnabled: Boolean,
+        reminderPreset: TripReminderPreset,
+        onUpdated: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val existing = tripRepository.getTripByIdSync(tripId) ?: return@launch
+            val updated = existing.copy(
+                name = name.trim(),
+                destination = destination.trim(),
+                date = date.trim(),
+                startTimeMinutes = startTimeMinutes?.takeIf { it in 0..1439 },
+                peopleCount = maxOf(1, peopleCount),
+                description = description.trim(),
+                reminderEnabled = reminderEnabled,
+                reminderPreset = reminderPreset,
+                updatedAt = System.currentTimeMillis()
+            )
+            tripRepository.updateTrip(updated)
+            onUpdated()
+        }
+    }
+
+    fun toggleTripReminder(
+        tripId: Long,
+        enabled: Boolean,
+        preset: TripReminderPreset = TripReminderPreset.ONE_DAY_BEFORE
+    ) {
+        viewModelScope.launch {
+            val existing = tripRepository.getTripByIdSync(tripId) ?: return@launch
+            val updated = existing.copy(
+                reminderEnabled = enabled,
+                reminderPreset = preset,
+                updatedAt = System.currentTimeMillis()
+            )
+            tripRepository.updateTrip(updated)
         }
     }
 
@@ -234,10 +334,15 @@ class TravelViewModel(
         }
     }
 
+    suspend fun getMomentByIdSync(momentId: Long): Moment? {
+        return momentRepository.getMomentByIdSync(momentId)
+    }
+
     fun addMoment(
         tripId: Long,
         category: MomentCategory,
         note: String,
+        hyperlinks: List<com.example.data.model.MomentHyperlink> = emptyList(),
         imageUri: String?,
         onSaved: () -> Unit = {}
     ) {
@@ -246,15 +351,56 @@ class TravelViewModel(
 
         viewModelScope.launch {
             try {
+                val cleanedText = note.trim()
+                val validLinks = HyperlinkUtils.cleanupAndDeduplicateSpans(hyperlinks, cleanedText.length)
                 val moment = Moment(
                     tripId = tripId,
                     category = category,
-                    note = note.trim(),
+                    note = cleanedText,
+                    hyperlinks = validLinks,
                     imageUri = imageUri,
                     timestamp = System.currentTimeMillis()
                 )
                 momentRepository.addMoment(moment)
                 travelStampRepository.updateStampMomentsCount(tripId)
+                onSaved()
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun updateMoment(
+        momentId: Long,
+        tripId: Long,
+        category: MomentCategory,
+        note: String,
+        hyperlinks: List<com.example.data.model.MomentHyperlink> = emptyList(),
+        imageUri: String?,
+        onSaved: () -> Unit = {}
+    ) {
+        if (_isProcessing.value) return
+        _isProcessing.value = true
+
+        viewModelScope.launch {
+            try {
+                val existing = momentRepository.getMomentByIdSync(momentId)
+                val cleanedText = note.trim()
+                val validLinks = HyperlinkUtils.cleanupAndDeduplicateSpans(hyperlinks, cleanedText.length)
+                val updatedMoment = (existing ?: Moment(
+                    id = momentId,
+                    tripId = tripId,
+                    timestamp = System.currentTimeMillis()
+                )).copy(
+                    id = momentId,
+                    tripId = tripId,
+                    category = category,
+                    note = cleanedText,
+                    hyperlinks = validLinks,
+                    imageUri = imageUri,
+                    updatedAt = System.currentTimeMillis()
+                )
+                momentRepository.updateMoment(updatedMoment)
                 onSaved()
             } finally {
                 _isProcessing.value = false
@@ -277,6 +423,7 @@ class TravelViewModel(
         name: String,
         destination: String,
         date: String,
+        startTimeMinutes: Int? = null,
         peopleCount: Int,
         description: String,
         onUpdated: () -> Unit = {}
@@ -296,10 +443,13 @@ class TravelViewModel(
                 else -> TripStatus.IN_PROGRESS
             }
 
+            val validStartTime = startTimeMinutes?.takeIf { it in 0..1439 }
+
             val updated = existing.copy(
                 name = name.trim(),
                 destination = destination.trim(),
                 date = targetDate,
+                startTimeMinutes = validStartTime,
                 peopleCount = if (peopleCount < 1) 1 else peopleCount,
                 description = description.trim(),
                 status = resolvedStatus,
@@ -526,7 +676,8 @@ class TravelViewModel(
                     momentRepository = appContainer.momentRepository,
                     travelStampRepository = appContainer.travelStampRepository,
                     userPreferencesRepository = appContainer.userPreferencesRepository,
-                    database = appContainer.database
+                    database = appContainer.database,
+                    locationSuggestionRepository = appContainer.locationSuggestionRepository
                 )
             }
         }

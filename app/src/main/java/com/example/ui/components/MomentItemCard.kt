@@ -1,8 +1,9 @@
 package com.example.ui.components
 
-import android.net.Uri
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,11 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,9 +37,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,6 +50,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.example.data.model.Moment
 import com.example.ui.theme.Terracotta
+import com.example.ui.util.LinkAnnotationUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,8 +59,10 @@ import java.util.Locale
 fun MomentItemCard(
     moment: Moment,
     onDelete: () -> Unit,
+    onEdit: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var showFullImage by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -65,8 +71,17 @@ fun MomentItemCard(
         sdf.format(Date(moment.timestamp))
     }
 
+    val linkColor = MaterialTheme.colorScheme.primary
+    val annotatedNote = remember(moment.note, moment.hyperlinks, linkColor) {
+        LinkAnnotationUtils.buildAnnotatedNote(moment.note, moment.hyperlinks, linkColor)
+    }
+
+    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("moment_item_card_${moment.id}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -78,7 +93,7 @@ fun MomentItemCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Top Row: Category Chip & Timestamp & Delete
+            // Top Row: Category Chip & Timestamp & Edit/Delete
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -115,9 +130,27 @@ fun MomentItemCard(
 
                     Spacer(modifier = Modifier.width(4.dp))
 
+                    if (onEdit != null) {
+                        IconButton(
+                            onClick = onEdit,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("edit_moment_button_${moment.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit moment",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = { showDeleteConfirm = true },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("delete_moment_button_${moment.id}")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
@@ -129,13 +162,30 @@ fun MomentItemCard(
                 }
             }
 
-            // Note Text
+            // Interactive Note Text with Hyperlinks & Safe Intent Dispatch
             if (moment.note.isNotBlank()) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = moment.note,
+                    text = annotatedNote,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    onTextLayout = { textLayoutResult = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("moment_note_text_${moment.id}")
+                        .pointerInput(annotatedNote) {
+                            detectTapGestures { tapOffset ->
+                                textLayoutResult?.let { layout ->
+                                    val charOffset = layout.getOffsetForPosition(tapOffset)
+                                    annotatedNote
+                                        .getStringAnnotations(tag = "URL", start = charOffset, end = charOffset)
+                                        .firstOrNull()
+                                        ?.let { annotation ->
+                                            LinkAnnotationUtils.openSafeWebUrl(context, annotation.item)
+                                        }
+                                }
+                            }
+                        }
                 )
             }
 

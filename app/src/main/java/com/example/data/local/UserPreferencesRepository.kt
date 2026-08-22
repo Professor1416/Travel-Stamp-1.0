@@ -15,8 +15,10 @@ enum class AppThemeMode {
 interface UserPreferencesRepository {
     val hasCompletedOnboarding: StateFlow<Boolean>
     val themeMode: StateFlow<AppThemeMode>
+    val preTripRemindersEnabled: StateFlow<Boolean>
     fun setOnboardingCompleted(completed: Boolean)
     fun setThemeMode(mode: AppThemeMode)
+    fun setPreTripRemindersEnabled(enabled: Boolean)
 }
 
 class UserPreferencesRepositoryImpl(context: Context) : UserPreferencesRepository {
@@ -31,6 +33,11 @@ class UserPreferencesRepositoryImpl(context: Context) : UserPreferencesRepositor
         loadThemeMode()
     )
     override val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    private val _preTripRemindersEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_PRE_TRIP_REMINDERS, true)
+    )
+    override val preTripRemindersEnabled: StateFlow<Boolean> = _preTripRemindersEnabled.asStateFlow()
 
     private fun loadThemeMode(): AppThemeMode {
         val saved = prefs.getString(KEY_THEME_MODE, AppThemeMode.SYSTEM.name) ?: AppThemeMode.SYSTEM.name
@@ -51,8 +58,15 @@ class UserPreferencesRepositoryImpl(context: Context) : UserPreferencesRepositor
         _themeMode.value = mode
     }
 
+    override fun setPreTripRemindersEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PRE_TRIP_REMINDERS, enabled).apply()
+        _preTripRemindersEnabled.value = enabled
+    }
+
     companion object {
         private const val KEY_ONBOARDING_COMPLETED = "key_onboarding_completed"
         private const val KEY_THEME_MODE = "key_theme_mode"
+        private const val KEY_PRE_TRIP_REMINDERS = "key_pre_trip_reminders"
     }
 }
+

@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.data.model.Trip
 import com.example.data.model.TripStatus
+import com.example.data.util.DateUtils
 import com.example.ui.theme.Terracotta
 
 @Composable
@@ -66,13 +67,37 @@ fun TripCardTicket(
                 .fillMaxWidth()
                 .padding(Spacing.cardPadding)
         ) {
-            // Top Row: Status badge & Trip ID
+            // Top Row: Status badge & Trip ID & Reminder Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                StatusBadge(status = trip.status)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+                ) {
+                    StatusBadge(status = trip.status)
+                    if (trip.reminderEnabled && trip.status != TripStatus.COMPLETED) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🔔 ${trip.reminderPreset.displayName}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Text(
                     text = "NO. #${String.format("%04d", trip.id)}",
@@ -166,7 +191,7 @@ fun TripCardTicket(
                             maxLines = 1
                         )
                         Text(
-                            text = trip.date,
+                            text = DateUtils.formatTripDateWithTime(trip.date, trip.startTimeMinutes),
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,

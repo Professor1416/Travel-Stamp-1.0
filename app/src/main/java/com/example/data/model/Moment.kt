@@ -6,6 +6,7 @@ data class Moment(
     val tripId: Long,
     val category: MomentCategory = MomentCategory.NOTE,
     val note: String = "",
+    val hyperlinks: List<MomentHyperlink> = emptyList(),
     val imageUri: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis(),

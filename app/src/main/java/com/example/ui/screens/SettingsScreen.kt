@@ -1,7 +1,10 @@
 package com.example.ui.screens
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -17,32 +20,38 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Terrain
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -50,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +68,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,23 +79,23 @@ import com.example.ui.components.TravelConfirmationDialog
 import com.example.ui.components.TravelOutlinedButton
 import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.theme.ForestPine
-import com.example.ui.theme.OchreGold
-import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: TravelViewModel,
     onNavigateBack: () -> Unit,
-    onSampleLoaded: (Long) -> Unit,
+    onAboutClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val totalTrips by viewModel.allTrips.collectAsStateWithLifecycle()
-    val stamps by viewModel.stamps.collectAsStateWithLifecycle()
-    val momentsCount by viewModel.totalMomentsCount.collectAsStateWithLifecycle()
+    val preTripRemindersEnabled by viewModel.preTripRemindersEnabled.collectAsStateWithLifecycle()
 
     var isExporting by remember { mutableStateOf(false) }
     var isImporting by remember { mutableStateOf(false) }
@@ -105,14 +114,17 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("settings_screen"),
         topBar = {
             TopAppBar(
                 title = {
                     Text(
                         text = "SETTINGS & BACKUP",
                         style = MaterialTheme.typography.titleMedium,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 },
                 navigationIcon = {
@@ -131,285 +143,352 @@ fun SettingsScreen(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.screenHorizontal),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl)
         ) {
             // Status Banner if any
             if (statusMessage != null) {
-                item {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = ForestPine.copy(alpha = 0.12f)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = ForestPine.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = ForestPine,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.sm))
+                        Text(
+                            text = statusMessage!!,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ForestPine,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            // 1. APPEARANCE
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_section_appearance"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                ) {
+                    SectionHeader(title = "Appearance", emoji = "🎨")
+
+                    ThemeOptionTile(
+                        title = "Warm Parchment Light",
+                        subtitle = "Warm vintage paper & forest green palette",
+                        icon = Icons.Default.LightMode,
+                        isSelected = currentThemeMode == AppThemeMode.LIGHT,
+                        testTag = "theme_light_option",
+                        onClick = { viewModel.setThemeMode(AppThemeMode.LIGHT) }
+                    )
+
+                    ThemeOptionTile(
+                        title = "Deep Slate Night",
+                        subtitle = "Forest slate & warm off-white palette",
+                        icon = Icons.Default.DarkMode,
+                        isSelected = currentThemeMode == AppThemeMode.DARK,
+                        testTag = "theme_dark_option",
+                        onClick = { viewModel.setThemeMode(AppThemeMode.DARK) }
+                    )
+
+                    ThemeOptionTile(
+                        title = "System Default",
+                        subtitle = "Follows your device dark/light theme setting",
+                        icon = Icons.Default.PhoneAndroid,
+                        isSelected = currentThemeMode == AppThemeMode.SYSTEM,
+                        testTag = "theme_system_option",
+                        onClick = { viewModel.setThemeMode(AppThemeMode.SYSTEM) }
+                    )
+                }
+            }
+
+            // 2. NOTIFICATIONS
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_section_notifications"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                ) {
+                    SectionHeader(title = "Notifications", emoji = "🔔")
+
+                    // Pre-Trip Reminders Toggle Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .testTag("pre_trip_reminders_toggle_row"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(Spacing.md),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CheckCircle,
+                                imageVector = Icons.Default.NotificationsActive,
                                 contentDescription = null,
-                                tint = ForestPine,
-                                modifier = Modifier.size(20.dp)
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
                             )
-                            Spacer(modifier = Modifier.width(Spacing.sm))
-                            Text(
-                                text = statusMessage!!,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = ForestPine,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 1. Theme & Appearance
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.cardPadding),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
-                    ) {
-                        SectionHeader(title = "App Appearance", emoji = "🎨")
-
-                        ThemeOptionTile(
-                            title = "System Default",
-                            subtitle = "Follows your device dark/light theme setting",
-                            icon = Icons.Default.PhoneAndroid,
-                            isSelected = currentThemeMode == AppThemeMode.SYSTEM,
-                            onClick = { viewModel.setThemeMode(AppThemeMode.SYSTEM) }
-                        )
-
-                        ThemeOptionTile(
-                            title = "Warm Parchment Light",
-                            subtitle = "Warm vintage paper & forest green palette",
-                            icon = Icons.Default.LightMode,
-                            isSelected = currentThemeMode == AppThemeMode.LIGHT,
-                            onClick = { viewModel.setThemeMode(AppThemeMode.LIGHT) }
-                        )
-
-                        ThemeOptionTile(
-                            title = "Deep Slate Night",
-                            subtitle = "Forest slate & warm off-white palette",
-                            icon = Icons.Default.DarkMode,
-                            isSelected = currentThemeMode == AppThemeMode.DARK,
-                            onClick = { viewModel.setThemeMode(AppThemeMode.DARK) }
-                        )
-                    }
-                }
-            }
-
-            // 2. Data & Offline Backup (Export / Import JSON)
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.cardPadding),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
-                    ) {
-                        SectionHeader(title = "Data & Offline Backup", emoji = "💾")
-
-                        Text(
-                            text = "Export an offline JSON backup of all trips, timeline moments, checklists, and travel stamps.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        // Export Backup Button
-                        TravelPrimaryButton(
-                            text = "EXPORT PASSPORT BACKUP (.TSBACKUP)",
-                            icon = Icons.Default.FileUpload,
-                            isLoading = isExporting,
-                            onClick = {
-                                if (isExporting) return@TravelPrimaryButton
-                                isExporting = true
-                                viewModel.exportBackup(
-                                    context = context,
-                                    onResult = { result ->
-                                        isExporting = false
-                                        result.onSuccess { exportResult ->
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "application/octet-stream"
-                                                putExtra(Intent.EXTRA_STREAM, exportResult.fileUri)
-                                                putExtra(Intent.EXTRA_SUBJECT, "Travel Stamp Backup (${exportResult.fileName})")
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Save Backup Archive"))
-                                            statusMessage = "Backup ready: ${exportResult.totalTrips} journeys & ${exportResult.totalStamps} stamps archived."
-                                        }.onFailure {
-                                            statusMessage = "Export failed: ${it.localizedMessage ?: "Please try again."}"
-                                        }
-                                    }
-                                )
-                            },
-                            testTag = "export_backup_button"
-                        )
-
-                        // Import Backup Button
-                        TravelOutlinedButton(
-                            text = "IMPORT BACKUP FILE (.TSBACKUP / .JSON)",
-                            icon = Icons.Default.FileDownload,
-                            isLoading = isImporting,
-                            onClick = {
-                                importFilePickerLauncher.launch("*/*")
-                            },
-                            testTag = "import_backup_button"
-                        )
-                    }
-                }
-            }
-
-            // 3. Sample Journey Experience
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.cardPadding),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
-                    ) {
-                        SectionHeader(title = "Sample Expedition", emoji = "✨")
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(CircleShape)
-                                    .background(OchreGold.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Terrain,
-                                    contentDescription = null,
-                                    tint = OchreGold,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(Spacing.md))
+                            Spacer(modifier = Modifier.width(14.dp))
                             Column {
                                 Text(
-                                    text = "Harihar Fort Expedition",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
+                                    text = "Pre-Trip Reminders",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Explore a sample trip with moments, checklist, and stamp",
-                                    style = MaterialTheme.typography.bodySmall,
+                                    text = if (preTripRemindersEnabled) "Reminders active for planned trips" else "All expedition reminders paused",
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
 
-                        TravelOutlinedButton(
-                            text = "EXPLORE SAMPLE DATA",
-                            icon = Icons.Default.AutoAwesome,
-                            onClick = {
-                                viewModel.populateSampleJourney { sampleTripId ->
-                                    statusMessage = "Harihar Fort journey loaded."
-                                    onSampleLoaded(sampleTripId)
-                                }
+                        Switch(
+                            checked = preTripRemindersEnabled,
+                            onCheckedChange = { enabled ->
+                                viewModel.setPreTripRemindersEnabled(enabled)
                             },
-                            testTag = "load_sample_data_button"
+                            modifier = Modifier.testTag("pre_trip_reminders_switch"),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                            )
                         )
                     }
-                }
-            }
 
-            // 4. About & Privacy Policy
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(
+                    // Notification Settings Action Row
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(Spacing.cardPadding),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable {
+                                openNotificationSettings(context)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .testTag("open_notification_settings_row"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        SectionHeader(title = "About Travel Stamp", emoji = "🛡️")
-
-                        Text(
-                            text = "Travel Stamp v1.0.0",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontFamily = FontFamily.Serif,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Text(
-                            text = "“Your journeys. Your memories. Your collection.”",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(Spacing.xs))
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Security,
+                                imageVector = Icons.Default.Tune,
                                 contentDescription = null,
-                                tint = ForestPine,
-                                modifier = Modifier.size(16.dp)
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
                             )
-                            Spacer(modifier = Modifier.width(Spacing.sm))
-                            Text(
-                                text = "100% Offline & Private on your device",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = ForestPine
-                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Text(
+                                    text = "Notification Settings",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Manage system notification channels & alerts",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
+
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Open Notification Settings",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
 
-            item {
-                Spacer(modifier = Modifier.height(Spacing.xxl))
+            // 3. DATA & OFFLINE BACKUP
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_section_data_backup"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                ) {
+                    SectionHeader(title = "Data & Offline Backup", emoji = "💾")
+
+                    Text(
+                        text = "Export an offline backup of all trips, timeline moments, checklists, and travel stamps.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Export Backup Button
+                    TravelPrimaryButton(
+                        text = "EXPORT PASSPORT BACKUP (.TSBACKUP)",
+                        icon = Icons.Default.FileUpload,
+                        isLoading = isExporting,
+                        onClick = {
+                            if (isExporting) return@TravelPrimaryButton
+                            isExporting = true
+                            viewModel.exportBackup(
+                                context = context,
+                                onResult = { result ->
+                                    isExporting = false
+                                    result.onSuccess { exportResult ->
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "application/octet-stream"
+                                            putExtra(Intent.EXTRA_STREAM, exportResult.fileUri)
+                                            putExtra(Intent.EXTRA_SUBJECT, "Travel Stamp Backup (${exportResult.fileName})")
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Save Backup Archive"))
+                                        statusMessage = "Backup ready: ${exportResult.totalTrips} journeys & ${exportResult.totalStamps} stamps archived."
+                                    }.onFailure {
+                                        statusMessage = "Export failed: ${it.localizedMessage ?: "Please try again."}"
+                                    }
+                                }
+                            )
+                        },
+                        testTag = "export_backup_button"
+                    )
+
+                    // Import Backup Button
+                    TravelOutlinedButton(
+                        text = "IMPORT BACKUP FILE (.TSBACKUP / .JSON)",
+                        icon = Icons.Default.FileDownload,
+                        isLoading = isImporting,
+                        onClick = {
+                            importFilePickerLauncher.launch("*/*")
+                        },
+                        testTag = "import_backup_button"
+                    )
+                }
             }
+
+            // 4. ABOUT
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_section_about"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                ) {
+                    SectionHeader(title = "About", emoji = "ℹ️")
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onAboutClick() }
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            .padding(horizontal = 16.dp, vertical = 14.dp)
+                            .testTag("about_travel_stamp_row"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Text(
+                                    text = "About Travel Stamp",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Version, legal, licenses & support",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Open About Screen",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.xxl))
         }
     }
 
@@ -444,12 +523,37 @@ fun SettingsScreen(
     }
 }
 
+private fun openNotificationSettings(context: Context) {
+    try {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            }
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+            }
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        try {
+            val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+            }
+            context.startActivity(fallbackIntent)
+        } catch (_: Exception) {
+            // Ignored safely
+        }
+    }
+}
+
 @Composable
 private fun ThemeOptionTile(
     title: String,
     subtitle: String,
     icon: ImageVector,
     isSelected: Boolean,
+    testTag: String,
     onClick: () -> Unit
 ) {
     Surface(
@@ -462,6 +566,7 @@ private fun ThemeOptionTile(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
+            .testTag(testTag)
     ) {
         Row(
             modifier = Modifier

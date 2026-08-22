@@ -1,5 +1,16 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.app.TimePickerDialog
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +36,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
@@ -32,7 +44,10 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -48,8 +63,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -65,6 +84,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -74,8 +94,10 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.MomentCategory
+import com.example.data.model.TripReminderPreset
 import com.example.data.model.TripStatus
 import com.example.data.util.DateUtils
 import com.example.ui.components.ChecklistComponent
@@ -107,14 +129,22 @@ fun TripCardScreen(
     onAddMomentClick: (Long) -> Unit,
     onFinishTripClick: (Long) -> Unit,
     onViewStampClick: (Long) -> Unit,
+    onCreatePosterClick: (Long) -> Unit = {},
+    onEditMomentClick: ((tripId: Long, momentId: Long) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val trip by viewModel.currentTrip.collectAsStateWithLifecycle()
     val checklistItems by viewModel.currentTripChecklist.collectAsStateWithLifecycle()
     val moments by viewModel.currentTripMoments.collectAsStateWithLifecycle()
     val stamp by viewModel.currentTripStamp.collectAsStateWithLifecycle()
 
     var isInitialLoading by remember(viewModel.selectedTripId.value) { mutableStateOf(true) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { _ -> }
+    )
 
     LaunchedEffect(viewModel.selectedTripId.value, trip) {
         if (trip != null) {
@@ -138,8 +168,11 @@ fun TripCardScreen(
     var editName by remember { mutableStateOf("") }
     var editDestination by remember { mutableStateOf("") }
     var editDate by remember { mutableStateOf("") }
+    var editStartTimeMinutes by remember { mutableStateOf<Int?>(null) }
     var editPeopleCount by remember { mutableStateOf("1") }
     var editDescription by remember { mutableStateOf("") }
+    var editReminderEnabled by remember { mutableStateOf(false) }
+    var editReminderPreset by remember { mutableStateOf(TripReminderPreset.ONE_DAY_BEFORE) }
     var editError by remember { mutableStateOf<String?>(null) }
 
     val filteredMoments = remember(moments, selectedCategoryFilter) {
@@ -220,8 +253,11 @@ fun TripCardScreen(
                                 editName = currentTrip.name
                                 editDestination = currentTrip.destination
                                 editDate = currentTrip.date
+                                editStartTimeMinutes = currentTrip.startTimeMinutes
                                 editPeopleCount = currentTrip.peopleCount.toString()
                                 editDescription = currentTrip.description
+                                editReminderEnabled = currentTrip.reminderEnabled
+                                editReminderPreset = currentTrip.reminderPreset
                                 editError = null
                                 showEditTripDialog = true
                             },
@@ -231,6 +267,22 @@ fun TripCardScreen(
                             modifier = Modifier.testTag("menu_edit_trip_details")
                         )
                         if (currentTrip.status == TripStatus.COMPLETED && (currentTrip.stampEarned || stamp != null)) {
+                            DropdownMenuItem(
+                                text = { Text("Create 9:16 Story Poster") },
+                                onClick = {
+                                    showMenu = false
+                                    onCreatePosterClick(currentTrip.id)
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                modifier = Modifier.testTag("menu_create_story_poster")
+                            )
                             DropdownMenuItem(
                                 text = { Text("Correct Journey Date") },
                                 onClick = {
@@ -320,6 +372,140 @@ fun TripCardScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                }
+            }
+
+            // 3. Pre-Trip Reminder Section (for upcoming & in-progress journeys)
+            if (currentTrip.status != TripStatus.COMPLETED) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("trip_reminder_card"),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (currentTrip.reminderEnabled) ForestPine.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.cardPadding),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = if (currentTrip.reminderEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                                        contentDescription = null,
+                                        tint = if (currentTrip.reminderEnabled) ForestPine else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(Spacing.sm))
+                                    Column {
+                                        Text(
+                                            text = "Pre-Trip Reminder",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = if (currentTrip.reminderEnabled) "Alert set: ${currentTrip.reminderPreset.displayName}" else "No reminder scheduled",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Switch(
+                                    checked = currentTrip.reminderEnabled,
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            if (ContextCompat.checkSelfPermission(
+                                                    context,
+                                                    Manifest.permission.POST_NOTIFICATIONS
+                                                ) != PackageManager.PERMISSION_GRANTED
+                                            ) {
+                                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            }
+                                        }
+                                        viewModel.toggleTripReminder(
+                                            tripId = currentTrip.id,
+                                            enabled = isChecked,
+                                            preset = currentTrip.reminderPreset
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("trip_reminder_switch"),
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = ForestPine
+                                    )
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = currentTrip.reminderEnabled,
+                                enter = fadeIn() + expandVertically(),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = Spacing.xs),
+                                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                                ) {
+                                    Text(
+                                        text = "TIMING PRESET",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        letterSpacing = 0.5.sp
+                                    )
+
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        items(TripReminderPreset.entries) { preset ->
+                                            val isSelected = currentTrip.reminderPreset == preset
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        viewModel.toggleTripReminder(
+                                                            tripId = currentTrip.id,
+                                                            enabled = true,
+                                                            preset = preset
+                                                        )
+                                                    }
+                                                    .testTag("preset_chip_${preset.name}")
+                                            ) {
+                                                Text(
+                                                    text = preset.displayName,
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = 6.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -538,7 +724,10 @@ fun TripCardScreen(
                 items(filteredMoments, key = { it.id }) { moment ->
                     MomentItemCard(
                         moment = moment,
-                        onDelete = { viewModel.deleteMoment(moment.id, currentTrip.id) }
+                        onDelete = { viewModel.deleteMoment(moment.id, currentTrip.id) },
+                        onEdit = onEditMomentClick?.let { callback ->
+                            { callback(currentTrip.id, moment.id) }
+                        }
                     )
                 }
             }
@@ -670,6 +859,81 @@ fun TripCardScreen(
                         }
                     }
 
+                    // Start Time Field (Editable for all trips including completed)
+                    Column {
+                        Text(
+                            text = "Start Time (Optional)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val initMin = editStartTimeMinutes ?: 420
+                                    TimePickerDialog(
+                                        context,
+                                        { _, hourOfDay, minute ->
+                                            editStartTimeMinutes = hourOfDay * 60 + minute
+                                        },
+                                        initMin / 60,
+                                        initMin % 60,
+                                        false
+                                    ).show()
+                                }
+                                .testTag("edit_trip_start_time_picker_button")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = Spacing.md, vertical = Spacing.md),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = null,
+                                        tint = if (editStartTimeMinutes != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(Spacing.sm))
+                                    Text(
+                                        text = com.example.data.util.DateUtils.formatTimeMinutes(editStartTimeMinutes) ?: "No start time set",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (editStartTimeMinutes != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (editStartTimeMinutes != null) {
+                                    Text(
+                                        text = "Remove",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier
+                                            .clickable { editStartTimeMinutes = null }
+                                            .padding(start = Spacing.sm)
+                                            .testTag("edit_trip_clear_start_time_button")
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Set",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     OutlinedTextField(
                         value = editPeopleCount,
                         onValueChange = { editPeopleCount = it.filter { char -> char.isDigit() } },
@@ -678,6 +942,59 @@ fun TripCardScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     )
+
+                    // Reminder Setting in Edit Trip Dialog
+                    if (currentTrip.status != TripStatus.COMPLETED) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(Spacing.sm),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Pre-Trip Reminder",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Switch(
+                                        checked = editReminderEnabled,
+                                        onCheckedChange = { editReminderEnabled = it },
+                                        modifier = Modifier.testTag("edit_trip_reminder_switch")
+                                    )
+                                }
+                                if (editReminderEnabled) {
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        items(TripReminderPreset.entries) { preset ->
+                                            val isSel = editReminderPreset == preset
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                                                modifier = Modifier.clickable { editReminderPreset = preset }
+                                            ) {
+                                                Text(
+                                                    text = preset.displayName,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     OutlinedTextField(
                         value = editDescription,
@@ -711,13 +1028,16 @@ fun TripCardScreen(
                             return@Button
                         }
                         val count = editPeopleCount.toIntOrNull() ?: currentTrip.peopleCount
-                        viewModel.updateTrip(
+                        viewModel.updateTripDetails(
                             tripId = currentTrip.id,
                             name = editName.trim(),
                             destination = editDestination.trim(),
                             date = editDate.trim(),
+                            startTimeMinutes = editStartTimeMinutes,
                             peopleCount = count,
                             description = editDescription.trim(),
+                            reminderEnabled = editReminderEnabled,
+                            reminderPreset = editReminderPreset,
                             onUpdated = {
                                 showEditTripDialog = false
                             }

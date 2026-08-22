@@ -27,6 +27,9 @@ interface MomentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMoment(moment: MomentEntity): Long
 
+    @androidx.room.Update
+    suspend fun updateMoment(moment: MomentEntity)
+
     @Query("DELETE FROM moments WHERE id = :id")
     suspend fun deleteMomentById(id: Long)
 

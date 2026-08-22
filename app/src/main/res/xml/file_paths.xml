@@ -2,6 +2,7 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="camera_photos" path="photos/" />
     <cache-path name="stamp_shares" path="stamps/" />
+    <cache-path name="poster_shares" path="posters/" />
     <cache-path name="backups" path="backups/" />
     <files-path name="moment_images" path="moments/" />
     <files-path name="app_backups" path="backups/" />

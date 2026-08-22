@@ -22,10 +22,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Hiking
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -84,6 +86,7 @@ fun TravelStampScreen(
     onNavigateBack: () -> Unit,
     onViewTripCard: () -> Unit,
     onCollectionClick: () -> Unit,
+    onCreatePosterClick: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -262,13 +265,21 @@ fun TravelStampScreen(
                         .padding(top = Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.md)
                 ) {
-                    // SAVE TO GALLERY Button
+                    // CREATE 9:16 STORY POSTER Button
                     TravelPrimaryButton(
-                        text = "SAVE TO GALLERY",
+                        text = "CREATE 9:16 STORY POSTER",
+                        icon = Icons.Default.AutoAwesome,
+                        onClick = { onCreatePosterClick(currentStamp.tripId) },
+                        testTag = "create_poster_button"
+                    )
+
+                    // SAVE TO GALLERY Button
+                    TravelOutlinedButton(
+                        text = "SAVE STAMP TO GALLERY",
                         icon = Icons.Default.Download,
                         isLoading = isSavingToGallery,
                         onClick = {
-                            if (isSavingToGallery) return@TravelPrimaryButton
+                            if (isSavingToGallery) return@TravelOutlinedButton
                             isSavingToGallery = true
                             coroutineScope.launch {
                                 val success = withContext(Dispatchers.IO) {

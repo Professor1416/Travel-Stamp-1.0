@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.example.data.model.HyperlinkUtils
 import com.example.data.model.Moment
 import com.example.data.model.MomentCategory
 import java.util.UUID
@@ -30,6 +31,7 @@ data class MomentEntity(
     val tripId: Long,
     val category: String = "NOTE",
     val note: String = "",
+    val hyperlinksJson: String? = null,
     val imageUri: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis(),
@@ -42,6 +44,7 @@ data class MomentEntity(
         tripId = tripId,
         category = MomentCategory.fromName(category),
         note = note,
+        hyperlinks = HyperlinkUtils.parseFromJson(hyperlinksJson),
         imageUri = imageUri,
         timestamp = timestamp,
         createdAt = createdAt,
@@ -56,6 +59,7 @@ data class MomentEntity(
             tripId = moment.tripId,
             category = moment.category.name,
             note = moment.note,
+            hyperlinksJson = if (moment.hyperlinks.isNotEmpty()) HyperlinkUtils.serializeToJson(moment.hyperlinks) else null,
             imageUri = moment.imageUri,
             timestamp = moment.timestamp,
             createdAt = moment.createdAt,

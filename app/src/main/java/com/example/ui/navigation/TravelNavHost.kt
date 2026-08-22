@@ -16,12 +16,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.AddMomentScreen
 import com.example.ui.screens.CollectionScreen
 import com.example.ui.screens.CreateTripScreen
 import com.example.ui.screens.FinishTripScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.PosterExportScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TravelStampScreen
 import com.example.ui.screens.TripCardScreen
@@ -33,15 +35,20 @@ object Destinations {
     const val CREATE_TRIP = "create_trip"
     const val TRIP_CARD = "trip_card/{tripId}"
     const val ADD_MOMENT = "add_moment/{tripId}"
+    const val EDIT_MOMENT = "edit_moment/{tripId}/{momentId}"
     const val FINISH_TRIP = "finish_trip/{tripId}"
     const val TRAVEL_STAMP = "travel_stamp/{tripId}"
     const val COLLECTION = "collection"
     const val SETTINGS = "settings"
+    const val ABOUT = "about"
+    const val POSTER_EXPORT = "poster_export/{tripId}"
 
     fun tripCard(tripId: Long) = "trip_card/$tripId"
     fun addMoment(tripId: Long) = "add_moment/$tripId"
+    fun editMoment(tripId: Long, momentId: Long) = "edit_moment/$tripId/$momentId"
     fun finishTrip(tripId: Long) = "finish_trip/$tripId"
     fun travelStamp(tripId: Long) = "travel_stamp/$tripId"
+    fun posterExport(tripId: Long) = "poster_export/$tripId"
 }
 
 @Composable
@@ -128,11 +135,17 @@ fun TravelNavHost(
                 onAddMomentClick = { id ->
                     navController.navigate(Destinations.addMoment(id))
                 },
+                onEditMomentClick = { tripIdParam, momentIdParam ->
+                    navController.navigate(Destinations.editMoment(tripIdParam, momentIdParam))
+                },
                 onFinishTripClick = { id ->
                     navController.navigate(Destinations.finishTrip(id))
                 },
                 onViewStampClick = { id ->
                     navController.navigate(Destinations.travelStamp(id))
+                },
+                onCreatePosterClick = { id ->
+                    navController.navigate(Destinations.posterExport(id))
                 }
             )
         }
@@ -144,6 +157,25 @@ fun TravelNavHost(
             val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
             AddMomentScreen(
                 tripId = tripId,
+                viewModel = viewModel,
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            route = Destinations.EDIT_MOMENT,
+            arguments = listOf(
+                navArgument("tripId") { type = NavType.LongType },
+                navArgument("momentId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+            val momentId = backStackEntry.arguments?.getLong("momentId") ?: return@composable
+            AddMomentScreen(
+                tripId = tripId,
+                momentId = momentId,
                 viewModel = viewModel,
                 onNavigateBack = {
                     navController.popBackStack()
@@ -192,6 +224,27 @@ fun TravelNavHost(
                     navController.navigate(Destinations.COLLECTION) {
                         popUpTo(Destinations.HOME)
                     }
+                },
+                onCreatePosterClick = { id ->
+                    navController.navigate(Destinations.posterExport(id))
+                }
+            )
+        }
+
+        composable(
+            route = Destinations.POSTER_EXPORT,
+            arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+            androidx.compose.runtime.LaunchedEffect(tripId) {
+                viewModel.selectTrip(tripId)
+            }
+
+            PosterExportScreen(
+                tripId = tripId,
+                viewModel = viewModel,
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }
@@ -222,11 +275,16 @@ fun TravelNavHost(
                 onNavigateBack = {
                     navController.popBackStack()
                 },
-                onSampleLoaded = { tripId ->
-                    viewModel.selectTrip(tripId)
-                    navController.navigate(Destinations.tripCard(tripId)) {
-                        popUpTo(Destinations.HOME)
-                    }
+                onAboutClick = {
+                    navController.navigate(Destinations.ABOUT)
+                }
+            )
+        }
+
+        composable(Destinations.ABOUT) {
+            AboutScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

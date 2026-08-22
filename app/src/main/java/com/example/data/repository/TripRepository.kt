@@ -6,6 +6,7 @@ import com.example.data.local.dao.TripDao
 import com.example.data.local.entity.TripEntity
 import com.example.data.model.Trip
 import com.example.data.model.TripStatus
+import com.example.data.notification.TripReminderScheduler
 import com.example.data.util.DateUtils
 import com.example.ui.util.PhotoUtils
 import kotlinx.coroutines.flow.Flow
@@ -35,7 +36,8 @@ interface TripRepository {
 class TripRepositoryImpl(
     private val tripDao: TripDao,
     private val momentDao: MomentDao? = null,
-    private val context: Context? = null
+    private val context: Context? = null,
+    private val reminderScheduler: TripReminderScheduler? = null
 ) : TripRepository {
 
     override fun getAllTrips(): Flow<List<Trip>> =
@@ -87,12 +89,21 @@ class TripRepositoryImpl(
             TripStatus.IN_PROGRESS
         }
         val entity = TripEntity.fromDomain(trip.copy(status = initialStatus, stampEarned = false, completedAt = null))
-        return tripDao.insertTrip(entity)
+        val insertedId = tripDao.insertTrip(entity)
+        if (trip.reminderEnabled) {
+            reminderScheduler?.scheduleReminder(trip.copy(id = insertedId, status = initialStatus))
+        }
+        return insertedId
     }
 
     override suspend fun updateTrip(trip: Trip) {
         val entity = TripEntity.fromDomain(trip)
         tripDao.updateTrip(entity)
+        if (trip.reminderEnabled && trip.status != TripStatus.COMPLETED) {
+            reminderScheduler?.scheduleReminder(trip)
+        } else {
+            reminderScheduler?.cancelReminder(trip.id)
+        }
     }
 
     override suspend fun finishTrip(
@@ -114,6 +125,8 @@ class TripRepositoryImpl(
             completedAt = System.currentTimeMillis()
         )
         tripDao.updateTrip(updated)
+        // Cancel reminder since trip is finished
+        reminderScheduler?.cancelReminder(tripId)
         return true
     }
 
@@ -122,6 +135,7 @@ class TripRepositoryImpl(
         val imageUris = moments.mapNotNull { it.imageUri }.filter { it.isNotBlank() }
 
         tripDao.deleteTripById(id)
+        reminderScheduler?.cancelReminder(id)
 
         if (context != null && momentDao != null) {
             for (uri in imageUris) {

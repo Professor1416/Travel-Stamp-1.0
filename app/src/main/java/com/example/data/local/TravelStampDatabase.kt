@@ -24,7 +24,7 @@ import com.example.data.local.entity.TripEntity
         TravelStampEntity::class,
         StampSequenceEntity::class
     ],
-    version = 4,
+    version = 7,
     exportSchema = false
 )
 abstract class TravelStampDatabase : RoomDatabase() {
@@ -93,6 +93,18 @@ abstract class TravelStampDatabase : RoomDatabase() {
             if (!tripCols.contains("uuid")) {
                 db.execSQL("ALTER TABLE `trips` ADD COLUMN `uuid` TEXT NOT NULL DEFAULT ''")
             }
+            if (!tripCols.contains("startTimeMinutes")) {
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `startTimeMinutes` INTEGER DEFAULT NULL")
+            }
+            if (!tripCols.contains("reminderEnabled")) {
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `reminderEnabled` INTEGER NOT NULL DEFAULT 0")
+            }
+            if (!tripCols.contains("reminderPreset")) {
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `reminderPreset` TEXT NOT NULL DEFAULT 'ONE_DAY_BEFORE'")
+            }
+            if (!tripCols.contains("reminderTimeMinutes")) {
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `reminderTimeMinutes` INTEGER DEFAULT NULL")
+            }
             if (!tripCols.contains("updatedAt")) {
                 db.execSQL("ALTER TABLE `trips` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
             }
@@ -128,6 +140,9 @@ abstract class TravelStampDatabase : RoomDatabase() {
             val momentCols = getExistingColumns(db, "moments")
             if (!momentCols.contains("uuid")) {
                 db.execSQL("ALTER TABLE `moments` ADD COLUMN `uuid` TEXT NOT NULL DEFAULT ''")
+            }
+            if (!momentCols.contains("hyperlinksJson")) {
+                db.execSQL("ALTER TABLE `moments` ADD COLUMN `hyperlinksJson` TEXT DEFAULT NULL")
             }
             if (!momentCols.contains("createdAt")) {
                 db.execSQL("ALTER TABLE `moments` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
@@ -190,6 +205,96 @@ abstract class TravelStampDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_1_7 = object : Migration(1, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_2_7 = object : Migration(2, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_3_7 = object : Migration(3, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_4_7 = object : Migration(4, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_5_7 = object : Migration(5, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_1_6 = object : Migration(1, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_2_6 = object : Migration(2, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_3_6 = object : Migration(3, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_4_6 = object : Migration(4, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_1_5 = object : Migration(1, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_2_5 = object : Migration(2, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_3_5 = object : Migration(3, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
         val MIGRATION_1_4 = object : Migration(1, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 performFullMigration(db)
@@ -208,6 +313,30 @@ abstract class TravelStampDatabase : RoomDatabase() {
             }
         }
 
+        val ALL_MIGRATIONS = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_1_7,
+            MIGRATION_2_7,
+            MIGRATION_3_7,
+            MIGRATION_4_7,
+            MIGRATION_5_7,
+            MIGRATION_1_6,
+            MIGRATION_2_6,
+            MIGRATION_3_6,
+            MIGRATION_4_6,
+            MIGRATION_1_5,
+            MIGRATION_2_5,
+            MIGRATION_3_5,
+            MIGRATION_1_4,
+            MIGRATION_2_4,
+            MIGRATION_1_3
+        )
+
         fun getDatabase(context: Context): TravelStampDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -215,14 +344,7 @@ abstract class TravelStampDatabase : RoomDatabase() {
                     TravelStampDatabase::class.java,
                     "travel_stamp_database"
                 )
-                    .addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_1_4,
-                        MIGRATION_2_4,
-                        MIGRATION_1_3
-                    )
+                    .addMigrations(*ALL_MIGRATIONS)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
                             super.onOpen(db)

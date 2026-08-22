@@ -4,8 +4,12 @@ import android.content.Context
 import com.example.data.local.TravelStampDatabase
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.local.UserPreferencesRepositoryImpl
+import com.example.data.notification.TripReminderScheduler
+import com.example.data.notification.TripReminderSchedulerImpl
 import com.example.data.repository.ChecklistRepository
 import com.example.data.repository.ChecklistRepositoryImpl
+import com.example.data.repository.LocationSuggestionRepository
+import com.example.data.repository.LocationSuggestionRepositoryImpl
 import com.example.data.repository.MomentRepository
 import com.example.data.repository.MomentRepositoryImpl
 import com.example.data.repository.TravelStampRepository
@@ -20,6 +24,8 @@ interface AppContainer {
     val momentRepository: MomentRepository
     val travelStampRepository: TravelStampRepository
     val userPreferencesRepository: UserPreferencesRepository
+    val locationSuggestionRepository: LocationSuggestionRepository
+    val tripReminderScheduler: TripReminderScheduler
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -27,8 +33,17 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         TravelStampDatabase.getDatabase(context)
     }
 
+    override val tripReminderScheduler: TripReminderScheduler by lazy {
+        TripReminderSchedulerImpl(context.applicationContext)
+    }
+
     override val tripRepository: TripRepository by lazy {
-        TripRepositoryImpl(database.tripDao(), database.momentDao(), context.applicationContext)
+        TripRepositoryImpl(
+            tripDao = database.tripDao(),
+            momentDao = database.momentDao(),
+            context = context.applicationContext,
+            reminderScheduler = tripReminderScheduler
+        )
     }
 
     override val checklistRepository: ChecklistRepository by lazy {
@@ -45,5 +60,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val userPreferencesRepository: UserPreferencesRepository by lazy {
         UserPreferencesRepositoryImpl(context)
+    }
+
+    override val locationSuggestionRepository: LocationSuggestionRepository by lazy {
+        LocationSuggestionRepositoryImpl(tripRepository)
     }
 }

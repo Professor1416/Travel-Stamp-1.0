@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.map
 interface MomentRepository {
     fun getMomentsForTrip(tripId: Long): Flow<List<Moment>>
     suspend fun getMomentsForTripSync(tripId: Long): List<Moment>
+    suspend fun getMomentByIdSync(id: Long): Moment?
     suspend fun addMoment(moment: Moment): Long
+    suspend fun updateMoment(moment: Moment)
     suspend fun deleteMoment(id: Long)
     fun getMomentsCountForTrip(tripId: Long): Flow<Int>
     fun getTotalMomentsCount(): Flow<Int>
@@ -28,8 +30,15 @@ class MomentRepositoryImpl(
     override suspend fun getMomentsForTripSync(tripId: Long): List<Moment> =
         momentDao.getMomentsForTripSync(tripId).map { it.toDomain() }
 
+    override suspend fun getMomentByIdSync(id: Long): Moment? =
+        momentDao.getMomentByIdSync(id)?.toDomain()
+
     override suspend fun addMoment(moment: Moment): Long =
         momentDao.insertMoment(MomentEntity.fromDomain(moment))
+
+    override suspend fun updateMoment(moment: Moment) {
+        momentDao.updateMoment(MomentEntity.fromDomain(moment))
+    }
 
     override suspend fun deleteMoment(id: Long) {
         val existing = momentDao.getMomentByIdSync(id)
