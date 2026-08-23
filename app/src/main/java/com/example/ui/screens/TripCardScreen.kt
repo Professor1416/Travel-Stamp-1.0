@@ -268,7 +268,7 @@ fun TripCardScreen(
                         )
                         if (currentTrip.status == TripStatus.COMPLETED && (currentTrip.stampEarned || stamp != null)) {
                             DropdownMenuItem(
-                                text = { Text("Create 9:16 Story Poster") },
+                                text = { Text("Create Stamp Edition") },
                                 onClick = {
                                     showMenu = false
                                     onCreatePosterClick(currentTrip.id)

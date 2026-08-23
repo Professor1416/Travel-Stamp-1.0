@@ -31,12 +31,18 @@ object PosterExporter {
     /**
      * Saves the rendered poster bitmap to the user's Gallery via Android MediaStore.
      */
-    fun savePosterToGallery(context: Context, bitmap: Bitmap, stamp: TravelStamp): Boolean {
+    fun savePosterToGallery(
+        context: Context,
+        bitmap: Bitmap,
+        stamp: TravelStamp,
+        format: StampEditionFormat = StampEditionFormat.PORTRAIT
+    ): Boolean {
         return try {
             val safeName = stamp.title.replace(Regex("[^a-zA-Z0-9]"), "_").take(24)
             val safeCode = stamp.stampCode.replace("#", "")
+            val formatSuffix = format.name.lowercase()
             val timeStamp = System.currentTimeMillis()
-            val filename = "travel_stamp_poster_${safeCode}_${safeName}_${timeStamp}.png"
+            val filename = "travel_stamp_${safeCode}_${formatSuffix}_${safeName}_${timeStamp}.png"
 
             val resolver = context.contentResolver
             val contentValues = ContentValues().apply {
@@ -71,7 +77,12 @@ object PosterExporter {
      * Generates a temporary shareable PNG in the app cache directory and returns a content:// FileProvider URI.
      * Automatically cleans up older poster exports in cache to prevent unbounded growth.
      */
-    fun getShareablePosterUri(context: Context, bitmap: Bitmap, stamp: TravelStamp): Uri? {
+    fun getShareablePosterUri(
+        context: Context,
+        bitmap: Bitmap,
+        stamp: TravelStamp,
+        format: StampEditionFormat = StampEditionFormat.PORTRAIT
+    ): Uri? {
         return try {
             val posterDir = File(context.cacheDir, "posters")
             if (!posterDir.exists()) {
@@ -83,8 +94,9 @@ object PosterExporter {
 
             val safeName = stamp.title.replace(Regex("[^a-zA-Z0-9]"), "_").take(24)
             val safeCode = stamp.stampCode.replace("#", "")
+            val formatSuffix = format.name.lowercase()
             val timeStamp = System.currentTimeMillis()
-            val file = File(posterDir, "TravelStamp_Poster_${safeCode}_${safeName}_${timeStamp}.png")
+            val file = File(posterDir, "TravelStamp_Poster_${safeCode}_${formatSuffix}_${safeName}_${timeStamp}.png")
 
             FileOutputStream(file).use { output ->
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)

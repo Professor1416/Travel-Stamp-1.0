@@ -1,12 +1,14 @@
 package com.example.ui.screens
 
-import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,19 +21,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Collections
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Hiking
+import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -47,7 +49,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,11 +56,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -67,16 +67,13 @@ import com.example.ui.components.ErrorStateView
 import com.example.ui.components.LoadingView
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelOutlinedButton
-import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.components.TravelStampCard
+import com.example.ui.poster.PosterTemplate
+import com.example.ui.poster.StampEditionFormat
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
-import com.example.ui.util.StampExporter
 import com.example.ui.viewmodel.TravelViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,10 +84,9 @@ fun TravelStampScreen(
     onViewTripCard: () -> Unit,
     onCollectionClick: () -> Unit,
     onCreatePosterClick: (Long) -> Unit = {},
+    onCreateEditionClick: (tripId: Long, format: StampEditionFormat, template: PosterTemplate) -> Unit = { id, _, _ -> onCreatePosterClick(id) },
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(tripId) {
@@ -99,10 +95,9 @@ fun TravelStampScreen(
 
     val trip by viewModel.currentTrip.collectAsStateWithLifecycle()
     val stamp by viewModel.currentTripStamp.collectAsStateWithLifecycle()
-    val moments by viewModel.currentTripMoments.collectAsStateWithLifecycle()
 
-    var isSavingToGallery by remember { mutableStateOf(false) }
-    var isSharing by remember { mutableStateOf(false) }
+    var selectedFormat by remember { mutableStateOf(StampEditionFormat.PORTRAIT) }
+    var showFormatPicker by remember { mutableStateOf(false) }
     var isInitialLoading by remember(tripId) { mutableStateOf(true) }
 
     LaunchedEffect(tripId, stamp, trip) {
@@ -159,9 +154,6 @@ fun TravelStampScreen(
     }
 
     val currentStamp = stamp!!
-    val firstPhotoUri = remember(moments) {
-        moments.firstOrNull { !it.imageUri.isNullOrBlank() }?.imageUri
-    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -241,7 +233,7 @@ fun TravelStampScreen(
                 }
             }
 
-            // 2. Large Travel Stamp Card (Hero Artwork)
+            // 2. Large Official Travel Stamp Card (Canonical Official Artwork - No automatic moment photo)
             item {
                 Box(
                     modifier = Modifier
@@ -251,123 +243,34 @@ fun TravelStampScreen(
                 ) {
                     TravelStampCard(
                         stamp = currentStamp,
-                        photoUri = firstPhotoUri,
+                        photoUri = null,
                         elevation = 6.dp
                     )
                 }
             }
 
-            // 3. Primary Actions: SAVE TO GALLERY, SHARE STAMP, VIEW JOURNEY
+            // 3. Single Action: VIEW EXPEDITION LOG
             item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = Spacing.xs),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
-                ) {
-                    // CREATE 9:16 STORY POSTER Button
-                    TravelPrimaryButton(
-                        text = "CREATE 9:16 STORY POSTER",
-                        icon = Icons.Default.AutoAwesome,
-                        onClick = { onCreatePosterClick(currentStamp.tripId) },
-                        testTag = "create_poster_button"
-                    )
-
-                    // SAVE TO GALLERY Button
-                    TravelOutlinedButton(
-                        text = "SAVE STAMP TO GALLERY",
-                        icon = Icons.Default.Download,
-                        isLoading = isSavingToGallery,
-                        onClick = {
-                            if (isSavingToGallery) return@TravelOutlinedButton
-                            isSavingToGallery = true
-                            coroutineScope.launch {
-                                val success = withContext(Dispatchers.IO) {
-                                    val bitmap = StampExporter.createStampBitmap(
-                                        context = context,
-                                        stamp = currentStamp,
-                                        photoUri = firstPhotoUri
-                                    )
-                                    val saved = StampExporter.saveToGallery(context, bitmap, currentStamp)
-                                    try {
-                                        bitmap.recycle()
-                                    } catch (_: Exception) {}
-                                    saved
-                                }
-                                isSavingToGallery = false
-                                if (success) {
-                                    snackbarHostState.showSnackbar("Stamp saved to Gallery ✓")
-                                } else {
-                                    snackbarHostState.showSnackbar("Couldn't save stamp. Please try again.")
-                                }
-                            }
-                        },
-                        testTag = "save_to_gallery_button"
-                    )
-
-                    // SHARE STAMP Button (Shares Image with FileProvider)
-                    TravelOutlinedButton(
-                        text = "SHARE STAMP",
-                        icon = Icons.Default.Share,
-                        isLoading = isSharing,
-                        onClick = {
-                            if (isSharing) return@TravelOutlinedButton
-                            isSharing = true
-                            coroutineScope.launch {
-                                val shareUri = withContext(Dispatchers.IO) {
-                                    val bitmap = StampExporter.createStampBitmap(
-                                        context = context,
-                                        stamp = currentStamp,
-                                        photoUri = firstPhotoUri
-                                    )
-                                    val uri = StampExporter.getShareableUri(context, bitmap, currentStamp)
-                                    try {
-                                        bitmap.recycle()
-                                    } catch (_: Exception) {}
-                                    uri
-                                }
-                                isSharing = false
-                                if (shareUri != null) {
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "image/png"
-                                        putExtra(Intent.EXTRA_STREAM, shareUri)
-                                        putExtra(
-                                            Intent.EXTRA_TEXT,
-                                            "Check out my Travel Stamp for ${currentStamp.title} (${currentStamp.stampCode})! 🏔️✨"
-                                        )
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(
-                                        Intent.createChooser(shareIntent, "Share Travel Stamp")
-                                    )
-                                } else {
-                                    snackbarHostState.showSnackbar("Unable to prepare stamp for sharing.")
-                                }
-                            }
-                        },
-                        testTag = "share_stamp_button"
-                    )
-
-                    // VIEW EXPEDITION LOG Button
-                    TravelOutlinedButton(
-                        text = "VIEW EXPEDITION LOG",
-                        icon = Icons.Default.Hiking,
-                        onClick = onViewTripCard,
-                        testTag = "view_trip_log_button"
-                    )
-                }
+                TravelOutlinedButton(
+                    text = "VIEW EXPEDITION LOG",
+                    icon = Icons.Default.Hiking,
+                    onClick = onViewTripCard,
+                    testTag = "view_trip_log_button"
+                )
             }
 
-            // 4. Expedition Memories & Timeline Section
+            // 4. CREATE YOUR STAMP EDITION Section
             item {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("create_stamp_edition_section"),
+                    shape = RoundedCornerShape(22.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outlineVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -375,71 +278,242 @@ fun TravelStampScreen(
                             .padding(Spacing.cardPadding),
                         verticalArrangement = Arrangement.spacedBy(Spacing.md)
                     ) {
-                        Row(
+                        // Section Title
+                        Text(
+                            text = "CREATE YOUR STAMP EDITION",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            letterSpacing = 0.5.sp
+                        )
+
+                        // Selected Format indicator & Change action
+                        Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "⏱️", fontSize = 16.sp)
-                                Spacer(modifier = Modifier.width(Spacing.sm))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+                                ) {
+                                    Text(
+                                        text = "Selected:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = selectedFormat.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.testTag("selected_format_label")
+                                    )
+                                }
+
                                 Text(
-                                    text = "EXPEDITION TIMELINE (${moments.size})",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    text = if (showFormatPicker) "Done" else "Change",
+                                    style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    letterSpacing = 1.2.sp
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { showFormatPicker = !showFormatPicker }
+                                        .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
+                                        .testTag("change_format_button")
                                 )
                             }
                         }
 
-                        if (moments.isEmpty()) {
-                            Text(
-                                text = "No moments recorded yet. You can continue adding trail notes, milestones, and photos to this completed journey anytime.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                moments.take(3).forEach { moment ->
-                                    Row(
+                        // Expandable Format Selector (Square, Portrait, Story)
+                        AnimatedVisibility(visible = showFormatPicker) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                val formats = listOf(
+                                    StampEditionFormat.SQUARE,
+                                    StampEditionFormat.PORTRAIT,
+                                    StampEditionFormat.STORY
+                                )
+                                formats.forEach { format ->
+                                    val isSelected = selectedFormat == format
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(
+                                            width = if (isSelected) 2.dp else 1.dp,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                        ),
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                        } else {
+                                            MaterialTheme.colorScheme.surface
+                                        },
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                                            .padding(Spacing.sm),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(text = moment.category.emoji, fontSize = 16.sp)
-                                        Spacer(modifier = Modifier.width(Spacing.sm))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = moment.category.title,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            if (moment.note.isNotBlank()) {
-                                                Text(
-                                                    text = moment.note,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
+                                            .weight(1f)
+                                            .clickable {
+                                                selectedFormat = format
                                             }
+                                            .testTag("format_option_${format.title}")
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(vertical = Spacing.sm, horizontal = Spacing.xs),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = format.title,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
 
-                        TravelOutlinedButton(
-                            text = "VIEW TIMELINE & ADD MEMORIES",
-                            icon = Icons.Default.Hiking,
-                            onClick = onViewTripCard,
-                            testTag = "view_timeline_button"
-                        )
+                        // Two Large Clear Choices: Passport Stamp & Photo + Stamp
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            // Choice 1: Passport Stamp ("Classic official edition")
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        onCreateEditionClick(
+                                            currentStamp.tripId,
+                                            selectedFormat,
+                                            PosterTemplate.PASSPORT_STAMP
+                                        )
+                                    }
+                                    .testTag("edition_choice_passport_stamp"),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(Spacing.md),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Spacing.md)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(CircleShape)
+                                            .background(ForestPine.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MilitaryTech,
+                                            contentDescription = null,
+                                            tint = ForestPine,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Passport Stamp",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Classic official edition",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            // Choice 2: Photo + Stamp ("Create with a journey photo")
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        onCreateEditionClick(
+                                            currentStamp.tripId,
+                                            selectedFormat,
+                                            PosterTemplate.PHOTO_STAMP
+                                        )
+                                    }
+                                    .testTag("edition_choice_photo_stamp"),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(Spacing.md),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Spacing.md)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(CircleShape)
+                                            .background(Terracotta.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PhotoLibrary,
+                                            contentDescription = null,
+                                            tint = Terracotta,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Photo + Stamp",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Create with a journey photo",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

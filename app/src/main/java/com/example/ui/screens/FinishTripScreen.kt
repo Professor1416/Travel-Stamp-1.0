@@ -65,6 +65,7 @@ import com.example.ui.components.SectionHeader
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelConfirmationDialog
 import com.example.ui.components.TravelPrimaryButton
+import com.example.ui.poster.StampEditionFormat
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.InkAmber
 import com.example.ui.theme.InkCrimson
@@ -98,6 +99,7 @@ fun FinishTripScreen(
     var reflectionNote by remember { mutableStateOf("") }
     var selectedInkHex by remember { mutableStateOf("#C85A32") } // Default Terracotta
     var selectedStyle by remember { mutableStateOf("MOUNTAIN") }
+    var selectedFormat by remember { mutableStateOf(StampEditionFormat.PORTRAIT) }
     var showFinishConfirmationDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isInitialLoading by remember(tripId) { mutableStateOf(true) }
@@ -680,7 +682,125 @@ fun FinishTripScreen(
                 }
             }
 
-            // 5. Final Reflection Note
+            // 5. Stamp Format (Presentation & Export choice)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                    ) {
+                        SectionHeader(title = "Stamp Format", emoji = "📐")
+
+                        Text(
+                            text = "Choose how you'd like to create and share your stamp later. You can change this anytime.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            val formatOptions = listOf(
+                                Triple(StampEditionFormat.SQUARE, "Square", "square_shape"),
+                                Triple(StampEditionFormat.PORTRAIT, "Portrait", "portrait_shape"),
+                                Triple(StampEditionFormat.STORY, "Story", "story_shape")
+                            )
+
+                            formatOptions.forEach { (format, name, shapeType) ->
+                                val isSelected = selectedFormat == format
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                    ),
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { selectedFormat = format }
+                                        .testTag("stamp_format_${format.name.lowercase()}")
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(vertical = Spacing.md, horizontal = Spacing.xs),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        // Shape preview indicator
+                                        Box(
+                                            modifier = Modifier.size(28.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            when (shapeType) {
+                                                "square_shape" -> {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(20.dp)
+                                                            .border(
+                                                                width = 2.dp,
+                                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                shape = RoundedCornerShape(3.dp)
+                                                            )
+                                                    )
+                                                }
+                                                "portrait_shape" -> {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(width = 17.dp, height = 23.dp)
+                                                            .border(
+                                                                width = 2.dp,
+                                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                shape = RoundedCornerShape(3.dp)
+                                                            )
+                                                    )
+                                                }
+                                                "story_shape" -> {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(width = 14.dp, height = 25.dp)
+                                                            .border(
+                                                                width = 2.dp,
+                                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                shape = RoundedCornerShape(3.dp)
+                                                            )
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(Spacing.xs))
+
+                                        Text(
+                                            text = name,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 6. Final Reflection Note
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),

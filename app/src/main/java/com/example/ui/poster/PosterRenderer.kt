@@ -11,7 +11,6 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
-import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -28,7 +27,8 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * High-performance, memory-safe bitmap renderer for 1080x1920 (9:16) Travel Stamp posters.
+ * High-performance, memory-safe bitmap renderer for Travel Stamp editions across
+ * Square (1080x1080), Portrait (1080x1440), and Story (1080x1920) formats.
  * Pure presentation logic: strictly read-only, never alters Trip, Stamp, or database records.
  */
 object PosterRenderer {
@@ -36,30 +36,373 @@ object PosterRenderer {
     const val POSTER_WIDTH = 1080
     const val POSTER_HEIGHT = 1920
 
+    data class FittedTextLayout(
+        val lines: List<String>,
+        val paint: Paint,
+        val lineHeight: Float,
+        val totalHeight: Float
+    )
+
     fun render(
         context: Context,
         trip: Trip,
         stamp: TravelStamp,
         config: PosterRenderConfig
     ): Bitmap {
+        val targetWidth = config.format.width
+        val targetHeight = config.format.height
+
         val bitmap = try {
-            Bitmap.createBitmap(POSTER_WIDTH, POSTER_HEIGHT, Bitmap.Config.ARGB_8888)
+            Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         } catch (_: OutOfMemoryError) {
-            Bitmap.createBitmap(POSTER_WIDTH, POSTER_HEIGHT, Bitmap.Config.RGB_565)
+            Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.RGB_565)
         }
 
         val canvas = Canvas(bitmap)
 
         when (config.template) {
             PosterTemplate.PHOTO_STAMP -> {
-                renderTemplateA(context, canvas, trip, stamp, config)
+                renderTemplateA(context, canvas, trip, stamp, config, targetWidth, targetHeight)
             }
             PosterTemplate.PASSPORT_STAMP -> {
-                renderTemplateB(canvas, trip, stamp)
+                renderTemplateB(canvas, trip, stamp, config.format, targetWidth, targetHeight)
             }
         }
 
         return bitmap
+    }
+
+    // ==========================================
+    // TEMPLATE B: RESPONSIVE PASSPORT STAMP (PASS B)
+    // ==========================================
+    private fun renderTemplateB(
+        canvas: Canvas,
+        trip: Trip,
+        stamp: TravelStamp,
+        format: StampEditionFormat,
+        widthPx: Int,
+        heightPx: Int
+    ) {
+        val width = widthPx.toFloat()
+        val height = heightPx.toFloat()
+
+        val bgColorInt = AndroidColor.parseColor("#F5EBE1") // Authentic Sand Canvas parchment
+        val inkColorInt = parseColor(stamp.inkColorHex, AndroidColor.parseColor("#1E3A2F"))
+        val accentGold = AndroidColor.parseColor("#B07D46")
+        val innerBorderColor = AndroidColor.parseColor("#E5D5C5")
+
+        // 1. Parchment Background
+        val bgPaint = Paint().apply {
+            isAntiAlias = true
+            color = bgColorInt
+            style = Paint.Style.FILL
+        }
+        canvas.drawRect(0f, 0f, width, height, bgPaint)
+
+        // Subtle parchment vignette
+        val radialShader = RadialGradient(
+            width / 2f, height / 2f, height * 0.65f,
+            intArrayOf(AndroidColor.TRANSPARENT, AndroidColor.argb(28, 110, 80, 50)),
+            null,
+            Shader.TileMode.CLAMP
+        )
+        val vignettePaint = Paint().apply {
+            isAntiAlias = true
+            shader = radialShader
+        }
+        canvas.drawRect(0f, 0f, width, height, vignettePaint)
+
+        // 2. Responsive Geometry Parameters derived from Format
+        val outerMargin: Float
+        val innerMargin: Float
+        val outerStroke: Float
+        val innerStroke: Float
+        val headerSubY: Float
+        val headerSubSize: Float
+        val headerMainY: Float
+        val headerMainSize: Float
+        val dividerY: Float
+        val dividerMargin: Float
+        val stampCenterY: Float
+        val stampRadius: Float
+        val contentStartY: Float
+        val titleMaxSize: Float
+        val titleMinSize: Float
+        val destMaxSize: Float
+        val destMinSize: Float
+        val dateSize: Float
+        val serialSize: Float
+        val footerY: Float
+        val footerSize: Float
+
+        when (format) {
+            StampEditionFormat.SQUARE -> {
+                // 1080 x 1080
+                outerMargin = 34f
+                innerMargin = 48f
+                outerStroke = 4f
+                innerStroke = 2.5f
+                headerSubY = 88f
+                headerSubSize = 18f
+                headerMainY = 126f
+                headerMainSize = 25f
+                dividerY = 146f
+                dividerMargin = 220f
+                stampCenterY = 415f
+                stampRadius = 215f
+                contentStartY = 680f
+                titleMaxSize = 42f
+                titleMinSize = 28f
+                destMaxSize = 28f
+                destMinSize = 19f
+                dateSize = 22f
+                serialSize = 21f
+                footerY = height - 58f
+                footerSize = 17f
+            }
+            StampEditionFormat.PORTRAIT -> {
+                // 1080 x 1440 (Classic 3:4 Passport Certificate)
+                outerMargin = 42f
+                innerMargin = 58f
+                outerStroke = 5f
+                innerStroke = 3f
+                headerSubY = 118f
+                headerSubSize = 22f
+                headerMainY = 165f
+                headerMainSize = 32f
+                dividerY = 192f
+                dividerMargin = 190f
+                stampCenterY = 545f
+                stampRadius = 275f
+                contentStartY = 885f
+                titleMaxSize = 52f
+                titleMinSize = 34f
+                destMaxSize = 34f
+                destMinSize = 22f
+                dateSize = 26f
+                serialSize = 25f
+                footerY = height - 74f
+                footerSize = 20f
+            }
+            StampEditionFormat.STORY -> {
+                // 1080 x 1920 (9:16 Story)
+                outerMargin = 48f
+                innerMargin = 64f
+                outerStroke = 5f
+                innerStroke = 3f
+                headerSubY = 165f
+                headerSubSize = 24f
+                headerMainY = 222f
+                headerMainSize = 36f
+                dividerY = 252f
+                dividerMargin = 180f
+                stampCenterY = 780f
+                stampRadius = 325f
+                contentStartY = 1180f
+                titleMaxSize = 58f
+                titleMinSize = 36f
+                destMaxSize = 36f
+                destMinSize = 24f
+                dateSize = 28f
+                serialSize = 28f
+                footerY = height - 85f
+                footerSize = 22f
+            }
+        }
+
+        // 3. Decorative Passport Borders
+        val borderPaint = Paint().apply {
+            isAntiAlias = true
+            color = accentGold
+            alpha = 140
+            style = Paint.Style.STROKE
+            strokeWidth = outerStroke
+        }
+        canvas.drawRoundRect(
+            RectF(outerMargin, outerMargin, width - outerMargin, height - outerMargin),
+            36f, 36f, borderPaint
+        )
+
+        val innerDashedPaint = Paint().apply {
+            isAntiAlias = true
+            color = innerBorderColor
+            style = Paint.Style.STROKE
+            strokeWidth = innerStroke
+            pathEffect = DashPathEffect(floatArrayOf(16f, 10f), 0f)
+        }
+        canvas.drawRoundRect(
+            RectF(innerMargin, innerMargin, width - innerMargin, height - innerMargin),
+            28f, 28f, innerDashedPaint
+        )
+
+        // 4. Top Passport Memorandum Header
+        val headerSubPaint = Paint().apply {
+            isAntiAlias = true
+            color = accentGold
+            textSize = headerSubSize
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.28f
+        }
+        canvas.drawText("PASSPORT OF THE OPEN TRAIL", width / 2f, headerSubY, headerSubPaint)
+
+        val headerMainPaint = Paint().apply {
+            isAntiAlias = true
+            color = inkColorInt
+            alpha = 220
+            textSize = headerMainSize
+            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.18f
+        }
+        canvas.drawText("OFFICIAL EXPEDITION MEMORANDUM", width / 2f, headerMainY, headerMainPaint)
+
+        val linePaint = Paint().apply {
+            isAntiAlias = true
+            color = accentGold
+            alpha = 160
+            strokeWidth = 2.5f
+        }
+        canvas.drawLine(dividerMargin, dividerY, width - dividerMargin, dividerY, linePaint)
+
+        // 5. Hero Canonical Official Stamp Seal
+        drawSealToCanvas(
+            canvas = canvas,
+            centerX = width / 2f,
+            centerY = stampCenterY,
+            radius = stampRadius,
+            inkColor = inkColorInt,
+            stamp = stamp
+        )
+
+        // 6. Responsive Bottom Metadata Typography (No Truncation Bug)
+        val maxTextWidth = width - (innerMargin * 2f + 60f)
+
+        // A. Trip Title (Max 2 lines, fitted smoothly)
+        val baseTitlePaint = Paint().apply {
+            isAntiAlias = true
+            color = inkColorInt
+            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        val titleLayout = fitResponsiveText(
+            text = stamp.title,
+            basePaint = baseTitlePaint,
+            maxWidth = maxTextWidth,
+            maxLines = 2,
+            maxTextSize = titleMaxSize,
+            minTextSize = titleMinSize,
+            lineSpacingMultiplier = 1.22f
+        )
+
+        var currentY = contentStartY
+        for (line in titleLayout.lines) {
+            canvas.drawText(line, width / 2f, currentY, titleLayout.paint)
+            currentY += titleLayout.lineHeight
+        }
+
+        currentY += when (format) {
+            StampEditionFormat.SQUARE -> 6f
+            StampEditionFormat.PORTRAIT -> 10f
+            StampEditionFormat.STORY -> 14f
+        }
+
+        // B. Destination & Location (Max 2 lines, fitted smoothly)
+        val destRaw = (if (stamp.destination.isNotBlank()) stamp.destination else trip.destination)
+            .uppercase()
+            .replace(",", " •")
+        val baseDestPaint = Paint().apply {
+            isAntiAlias = true
+            color = AndroidColor.parseColor("#C85A32") // Terracotta
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.08f
+        }
+        val destLayout = fitResponsiveText(
+            text = destRaw,
+            basePaint = baseDestPaint,
+            maxWidth = maxTextWidth,
+            maxLines = 2,
+            maxTextSize = destMaxSize,
+            minTextSize = destMinSize,
+            lineSpacingMultiplier = 1.25f
+        )
+
+        for (line in destLayout.lines) {
+            canvas.drawText(line, width / 2f, currentY, destLayout.paint)
+            currentY += destLayout.lineHeight
+        }
+
+        currentY += when (format) {
+            StampEditionFormat.SQUARE -> 14f
+            StampEditionFormat.PORTRAIT -> 22f
+            StampEditionFormat.STORY -> 28f
+        }
+
+        // C. Journey Date Line
+        val datePaint = Paint().apply {
+            isAntiAlias = true
+            color = inkColorInt
+            alpha = 210
+            textSize = dateSize
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.10f
+        }
+        val dateLabel = "━◆ DATE OF EXPEDITION: ${stamp.dateText.uppercase()} ◆━"
+        canvas.drawText(dateLabel, width / 2f, currentY, datePaint)
+
+        currentY += when (format) {
+            StampEditionFormat.SQUARE -> 34f
+            StampEditionFormat.PORTRAIT -> 44f
+            StampEditionFormat.STORY -> 48f
+        }
+
+        // D. Stamp Code & Serial Box
+        val serialBoxPaint = Paint().apply {
+            isAntiAlias = true
+            color = accentGold
+            alpha = 140
+            style = Paint.Style.STROKE
+            strokeWidth = 2.5f
+        }
+        val serialBgPaint = Paint().apply {
+            isAntiAlias = true
+            color = AndroidColor.WHITE
+            alpha = 190
+            style = Paint.Style.FILL
+        }
+        val serialTextPaint = Paint().apply {
+            isAntiAlias = true
+            color = inkColorInt
+            textSize = serialSize
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        val serialLabel = "AUTHENTICATED TRAVEL STAMP: ${stamp.stampCode}"
+        val sWidth = min(serialTextPaint.measureText(serialLabel) + 50f, maxTextWidth)
+        val sHalfH = serialSize * 0.9f
+        val sRect = RectF(
+            width / 2f - sWidth / 2f,
+            currentY - sHalfH,
+            width / 2f + sWidth / 2f,
+            currentY + sHalfH * 0.6f
+        )
+        canvas.drawRoundRect(sRect, 10f, 10f, serialBgPaint)
+        canvas.drawRoundRect(sRect, 10f, 10f, serialBoxPaint)
+        canvas.drawText(serialLabel, width / 2f, currentY, serialTextPaint)
+
+        // 7. Bottom Branding / Watermark
+        val footerPaint = Paint().apply {
+            isAntiAlias = true
+            color = inkColorInt
+            alpha = 160
+            textSize = footerSize
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.16f
+        }
+        canvas.drawText("TRAVEL STAMP 🏔️ • OFFICIAL EXPEDITION LOG", width / 2f, footerY, footerPaint)
     }
 
     // ==========================================
@@ -70,10 +413,12 @@ object PosterRenderer {
         canvas: Canvas,
         trip: Trip,
         stamp: TravelStamp,
-        config: PosterRenderConfig
+        config: PosterRenderConfig,
+        widthPx: Int,
+        heightPx: Int
     ) {
-        val width = POSTER_WIDTH.toFloat()
-        val height = POSTER_HEIGHT.toFloat()
+        val width = widthPx.toFloat()
+        val height = heightPx.toFloat()
 
         // 1. Render Photo or Branded Fallback
         var photoDrawn = false
@@ -81,8 +426,8 @@ object PosterRenderer {
             val decodedPhoto = loadSafeOrientedBitmap(
                 context = context,
                 uriString = config.photoUri,
-                reqWidth = POSTER_WIDTH,
-                reqHeight = POSTER_HEIGHT
+                reqWidth = widthPx,
+                reqHeight = heightPx
             )
             if (decodedPhoto != null) {
                 drawTransformedPhoto(canvas, decodedPhoto, width, height, config.panX, config.panY, config.zoom)
@@ -112,9 +457,17 @@ object PosterRenderer {
         }
         canvas.drawText("TRAVEL STAMP • EXPEDITION POSTER", width / 2f, 120f, topHeaderPaint)
 
-        // 4. Overlaid Travel Stamp Seal
-        val stampCenterY = height * 0.46f
-        val stampRadius = 250f
+        // 4. Overlaid Travel Stamp Seal (Respects user drag position and discrete StampSize)
+        val baseStampRadius = min(width * 0.22f, height * 0.155f)
+        val stampRadius = baseStampRadius * config.stampSize.scale
+
+        val minX = stampRadius + 36f
+        val maxX = width - stampRadius - 36f
+        val minY = stampRadius + 140f
+        val maxY = height - stampRadius - 260f
+
+        val stampCenterX = (config.stampPositionX * width).coerceIn(minX, maxX)
+        val stampCenterY = (config.stampPositionY * height).coerceIn(minY, maxY)
 
         // Soft backdrop badge circle for stamp visibility on diverse photos
         val badgePaint = Paint().apply {
@@ -124,7 +477,7 @@ object PosterRenderer {
             style = Paint.Style.FILL
             setShadowLayer(30f, 0f, 10f, AndroidColor.argb(120, 0, 0, 0))
         }
-        canvas.drawCircle(width / 2f, stampCenterY, stampRadius + 24f, badgePaint)
+        canvas.drawCircle(stampCenterX, stampCenterY, stampRadius + 20f, badgePaint)
 
         val badgeBorderPaint = Paint().apply {
             isAntiAlias = true
@@ -133,12 +486,12 @@ object PosterRenderer {
             style = Paint.Style.STROKE
             strokeWidth = 3f
         }
-        canvas.drawCircle(width / 2f, stampCenterY, stampRadius + 20f, badgeBorderPaint)
+        canvas.drawCircle(stampCenterX, stampCenterY, stampRadius + 16f, badgeBorderPaint)
 
         val inkColorInt = parseColor(stamp.inkColorHex, AndroidColor.parseColor("#1E3A2F"))
         drawSealToCanvas(
             canvas = canvas,
-            centerX = width / 2f,
+            centerX = stampCenterX,
             centerY = stampCenterY,
             radius = stampRadius,
             inkColor = inkColorInt,
@@ -146,40 +499,52 @@ object PosterRenderer {
         )
 
         // 5. Bottom Metadata Typography
-        val contentStartY = height * 0.69f
+        val contentStartY = height * 0.70f
         val maxTextWidth = width - 180f
 
-        // Trip Title (Max 2 lines)
-        val titlePaint = Paint().apply {
+        val baseTitlePaint = Paint().apply {
             isAntiAlias = true
             color = AndroidColor.WHITE
-            textSize = 54f
             typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        val titleLines = wrapAndLimitText(stamp.title, titlePaint, maxTextWidth, 2)
+        val titleLayout = fitResponsiveText(
+            text = stamp.title,
+            basePaint = baseTitlePaint,
+            maxWidth = maxTextWidth,
+            maxLines = 2,
+            maxTextSize = 54f,
+            minTextSize = 34f
+        )
         var currentY = contentStartY
-        for (line in titleLines) {
-            canvas.drawText(line, width / 2f, currentY, titlePaint)
-            currentY += 64f
+        for (line in titleLayout.lines) {
+            canvas.drawText(line, width / 2f, currentY, titleLayout.paint)
+            currentY += titleLayout.lineHeight
         }
 
         currentY += 8f
 
-        // Destination (Max 2 lines)
-        val destPaint = Paint().apply {
+        val destText = (if (stamp.destination.isNotBlank()) stamp.destination else trip.destination)
+            .uppercase()
+            .replace(",", " •")
+        val baseDestPaint = Paint().apply {
             isAntiAlias = true
-            color = AndroidColor.parseColor("#FFAB91") // Warm accent for dark photo overlay
-            textSize = 34f
+            color = AndroidColor.parseColor("#FFAB91")
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
             letterSpacing = 0.08f
         }
-        val destText = (if (stamp.destination.isNotBlank()) stamp.destination else trip.destination).uppercase().replace(",", " •")
-        val destLines = wrapAndLimitText(destText, destPaint, maxTextWidth, 2)
-        for (line in destLines) {
-            canvas.drawText(line, width / 2f, currentY, destPaint)
-            currentY += 46f
+        val destLayout = fitResponsiveText(
+            text = destText,
+            basePaint = baseDestPaint,
+            maxWidth = maxTextWidth,
+            maxLines = 2,
+            maxTextSize = 34f,
+            minTextSize = 22f
+        )
+        for (line in destLayout.lines) {
+            canvas.drawText(line, width / 2f, currentY, destLayout.paint)
+            currentY += destLayout.lineHeight
         }
 
         currentY += 24f
@@ -233,7 +598,6 @@ object PosterRenderer {
     }
 
     private fun drawTemplateAGradients(canvas: Canvas, width: Float, height: Float) {
-        // Top subtle shadow for header readability
         val topShader = LinearGradient(
             0f, 0f, 0f, 280f,
             intArrayOf(AndroidColor.argb(190, 0, 0, 0), AndroidColor.TRANSPARENT),
@@ -246,7 +610,6 @@ object PosterRenderer {
         }
         canvas.drawRect(0f, 0f, width, 280f, topPaint)
 
-        // Bottom deep gradient for metadata readability
         val bottomShader = LinearGradient(
             0f, height * 0.48f, 0f, height,
             intArrayOf(
@@ -265,212 +628,6 @@ object PosterRenderer {
     }
 
     // ==========================================
-    // TEMPLATE B: PASSPORT / STAMP FOCUSED
-    // ==========================================
-    private fun renderTemplateB(
-        canvas: Canvas,
-        trip: Trip,
-        stamp: TravelStamp
-    ) {
-        val width = POSTER_WIDTH.toFloat()
-        val height = POSTER_HEIGHT.toFloat()
-
-        val bgColorInt = AndroidColor.parseColor("#F5EBE1") // Authentic Sand Canvas parchment
-        val inkColorInt = parseColor(stamp.inkColorHex, AndroidColor.parseColor("#1E3A2F"))
-        val accentGold = AndroidColor.parseColor("#B07D46")
-        val innerBorderColor = AndroidColor.parseColor("#E5D5C5")
-
-        // 1. Parchment Background
-        val bgPaint = Paint().apply {
-            isAntiAlias = true
-            color = bgColorInt
-            style = Paint.Style.FILL
-        }
-        canvas.drawRect(0f, 0f, width, height, bgPaint)
-
-        // Subtle parchment vignette
-        val radialShader = RadialGradient(
-            width / 2f, height / 2f, height * 0.65f,
-            intArrayOf(AndroidColor.TRANSPARENT, AndroidColor.argb(28, 110, 80, 50)),
-            null,
-            Shader.TileMode.CLAMP
-        )
-        val vignettePaint = Paint().apply {
-            isAntiAlias = true
-            shader = radialShader
-        }
-        canvas.drawRect(0f, 0f, width, height, vignettePaint)
-
-        // 2. Decorative Passport Borders
-        val outerMargin = 48f
-        val borderPaint = Paint().apply {
-            isAntiAlias = true
-            color = accentGold
-            alpha = 140
-            style = Paint.Style.STROKE
-            strokeWidth = 5f
-        }
-        canvas.drawRoundRect(
-            RectF(outerMargin, outerMargin, width - outerMargin, height - outerMargin),
-            40f, 40f, borderPaint
-        )
-
-        val innerMargin = 64f
-        val innerDashedPaint = Paint().apply {
-            isAntiAlias = true
-            color = innerBorderColor
-            style = Paint.Style.STROKE
-            strokeWidth = 3f
-            pathEffect = DashPathEffect(floatArrayOf(16f, 10f), 0f)
-        }
-        canvas.drawRoundRect(
-            RectF(innerMargin, innerMargin, width - innerMargin, height - innerMargin),
-            32f, 32f, innerDashedPaint
-        )
-
-        // 3. Top Passport Memorandum Header
-        val headerSubPaint = Paint().apply {
-            isAntiAlias = true
-            color = accentGold
-            textSize = 24f
-            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-            letterSpacing = 0.28f
-        }
-        canvas.drawText("PASSPORT OF THE OPEN TRAIL", width / 2f, 150f, headerSubPaint)
-
-        val headerMainPaint = Paint().apply {
-            isAntiAlias = true
-            color = inkColorInt
-            alpha = 220
-            textSize = 36f
-            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-            letterSpacing = 0.18f
-        }
-        canvas.drawText("OFFICIAL EXPEDITION MEMORANDUM", width / 2f, 205f, headerMainPaint)
-
-        val linePaint = Paint().apply {
-            isAntiAlias = true
-            color = accentGold
-            alpha = 160
-            strokeWidth = 2.5f
-        }
-        canvas.drawLine(180f, 235f, width - 180f, 235f, linePaint)
-
-        // 4. Large Official Stamp as the Hero
-        val stampCenterY = height * 0.44f
-        val stampRadius = 310f
-
-        drawSealToCanvas(
-            canvas = canvas,
-            centerX = width / 2f,
-            centerY = stampCenterY,
-            radius = stampRadius,
-            inkColor = inkColorInt,
-            stamp = stamp
-        )
-
-        // 5. Trip Metadata Typography
-        val contentStartY = height * 0.69f
-        val maxTextWidth = width - 200f
-
-        // Trip Name (Max 2 lines)
-        val titlePaint = Paint().apply {
-            isAntiAlias = true
-            color = inkColorInt
-            textSize = 58f
-            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-        }
-        val titleLines = wrapAndLimitText(stamp.title, titlePaint, maxTextWidth, 2)
-        var currentY = contentStartY
-        for (line in titleLines) {
-            canvas.drawText(line, width / 2f, currentY, titlePaint)
-            currentY += 68f
-        }
-
-        currentY += 12f
-
-        // Destination (Max 2 lines)
-        val destPaint = Paint().apply {
-            isAntiAlias = true
-            color = AndroidColor.parseColor("#C85A32") // Terracotta
-            textSize = 36f
-            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-            letterSpacing = 0.1f
-        }
-        val destText = (if (stamp.destination.isNotBlank()) stamp.destination else trip.destination).uppercase().replace(",", " •")
-        val destLines = wrapAndLimitText(destText, destPaint, maxTextWidth, 2)
-        for (line in destLines) {
-            canvas.drawText(line, width / 2f, currentY, destPaint)
-            currentY += 48f
-        }
-
-        currentY += 28f
-
-        // Journey Date Box
-        val datePaint = Paint().apply {
-            isAntiAlias = true
-            color = inkColorInt
-            alpha = 210
-            textSize = 28f
-            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-            letterSpacing = 0.12f
-        }
-        canvas.drawText("━◆ DATE OF EXPEDITION: ${stamp.dateText.uppercase()} ◆━", width / 2f, currentY, datePaint)
-
-        currentY += 48f
-
-        // Stamp Code & Serial Box
-        val serialBoxPaint = Paint().apply {
-            isAntiAlias = true
-            color = accentGold
-            alpha = 140
-            style = Paint.Style.STROKE
-            strokeWidth = 2.5f
-        }
-        val serialBgPaint = Paint().apply {
-            isAntiAlias = true
-            color = AndroidColor.WHITE
-            alpha = 180
-            style = Paint.Style.FILL
-        }
-        val serialTextPaint = Paint().apply {
-            isAntiAlias = true
-            color = inkColorInt
-            textSize = 28f
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-        }
-        val serialLabel = "AUTHENTICATED TRAVEL STAMP: ${stamp.stampCode}"
-        val sWidth = min(serialTextPaint.measureText(serialLabel) + 60f, maxTextWidth)
-        val sRect = RectF(
-            width / 2f - sWidth / 2f,
-            currentY - 34f,
-            width / 2f + sWidth / 2f,
-            currentY + 18f
-        )
-        canvas.drawRoundRect(sRect, 10f, 10f, serialBgPaint)
-        canvas.drawRoundRect(sRect, 10f, 10f, serialBoxPaint)
-        canvas.drawText(serialLabel, width / 2f, currentY, serialTextPaint)
-
-        // 6. Bottom Branding
-        val footerPaint = Paint().apply {
-            isAntiAlias = true
-            color = inkColorInt
-            alpha = 160
-            textSize = 22f
-            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-            letterSpacing = 0.16f
-        }
-        canvas.drawText("TRAVEL STAMP 🏔️ • OFFICIAL EXPEDITION LOG", width / 2f, height - 80f, footerPaint)
-    }
-
-    // ==========================================
     // BRANDED FALLBACK BACKGROUND
     // ==========================================
     private fun drawBrandedFallbackBackground(
@@ -479,9 +636,6 @@ object PosterRenderer {
         height: Float,
         stamp: TravelStamp
     ) {
-        val inkColor = parseColor(stamp.inkColorHex, AndroidColor.parseColor("#1E3A2F"))
-
-        // Rich dusk forest / sand canvas gradient
         val bgShader = LinearGradient(
             0f, 0f, 0f, height,
             intArrayOf(
@@ -498,7 +652,6 @@ object PosterRenderer {
         }
         canvas.drawRect(0f, 0f, width, height, bgPaint)
 
-        // Subtle topographic contour rings watermark
         val contourPaint = Paint().apply {
             isAntiAlias = true
             color = AndroidColor.WHITE
@@ -512,7 +665,6 @@ object PosterRenderer {
             canvas.drawCircle(centerX, centerY, r, contourPaint)
         }
 
-        // Subtle Compass Crosshair lines
         val crossPaint = Paint().apply {
             isAntiAlias = true
             color = AndroidColor.WHITE
@@ -604,69 +756,102 @@ object PosterRenderer {
         }
         val iconPaint = Paint().apply {
             isAntiAlias = true
-            textSize = radius * 0.20f
+            textSize = radius * 0.17f
             textAlign = Paint.Align.CENTER
         }
         canvas.drawText(motifEmoji, centerX, centerY - radius * 0.44f, iconPaint)
 
-        // Stamp Title
+        // Stamp Title: fitted dynamically (1 to 3 lines) so multi-word and long titles fit without truncation or ellipsis
         val sealTitlePaint = Paint().apply {
             isAntiAlias = true
             color = inkColor
-            textSize = radius * 0.15f
             typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
-            letterSpacing = 0.06f
+            letterSpacing = 0.04f
         }
-        val sealTitle = truncateTextSingleLine(stamp.title.uppercase(), sealTitlePaint, radius * 1.5f)
-        canvas.drawText(sealTitle, centerX, centerY - radius * 0.20f, sealTitlePaint)
+        val titleText = stamp.title.uppercase()
+        val titleLayout = fitResponsiveText(
+            text = titleText,
+            basePaint = sealTitlePaint,
+            maxWidth = radius * 1.52f,
+            maxLines = 3,
+            maxTextSize = radius * 0.135f,
+            minTextSize = radius * 0.080f,
+            lineSpacingMultiplier = 1.15f
+        )
+        val titleStartY = when (titleLayout.lines.size) {
+            1 -> centerY - radius * 0.22f
+            2 -> centerY - radius * 0.26f
+            else -> centerY - radius * 0.30f
+        }
+        var curY = titleStartY
+        for (line in titleLayout.lines) {
+            canvas.drawText(line, centerX, curY, titleLayout.paint)
+            curY += titleLayout.lineHeight
+        }
 
-        // Destination
+        // Destination / Location (Fitted dynamically across 1 to 2 lines)
         if (stamp.destination.isNotBlank()) {
             val sealDestPaint = Paint().apply {
                 isAntiAlias = true
                 color = inkColor
                 alpha = 220
-                textSize = radius * 0.10f
                 typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
                 textAlign = Paint.Align.CENTER
-                letterSpacing = 0.10f
+                letterSpacing = 0.06f
             }
-            val sealDest = truncateTextSingleLine(stamp.destination.uppercase().replace(",", " •"), sealDestPaint, radius * 1.4f)
-            canvas.drawText(sealDest, centerX, centerY - radius * 0.05f, sealDestPaint)
+            val destText = stamp.destination.uppercase().replace(",", " •")
+            val destLayout = fitResponsiveText(
+                text = destText,
+                basePaint = sealDestPaint,
+                maxWidth = radius * 1.46f,
+                maxLines = 2,
+                maxTextSize = radius * 0.090f,
+                minTextSize = radius * 0.060f,
+                lineSpacingMultiplier = 1.15f
+            )
+            val destStartY = when (destLayout.lines.size) {
+                1 -> centerY - radius * 0.04f
+                else -> centerY - radius * 0.08f
+            }
+            var dY = destStartY
+            for (line in destLayout.lines) {
+                canvas.drawText(line, centerX, dY, destLayout.paint)
+                dY += destLayout.lineHeight
+            }
         }
 
         // Date row
         val sealDatePaint = Paint().apply {
             isAntiAlias = true
             color = inkColor
-            textSize = radius * 0.10f
+            textSize = radius * 0.088f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
-            letterSpacing = 0.08f
+            letterSpacing = 0.06f
         }
-        canvas.drawText("━◆ ${stamp.dateText.uppercase()} ◆━", centerX, centerY + radius * 0.14f, sealDatePaint)
+        canvas.drawText("━◆ ${stamp.dateText.uppercase()} ◆━", centerX, centerY + radius * 0.15f, sealDatePaint)
 
         // Label: TRAVEL STAMP
         val stampLabelPaint = Paint().apply {
             isAntiAlias = true
             color = inkColor
             alpha = 210
-            textSize = radius * 0.085f
+            textSize = radius * 0.080f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
-            letterSpacing = 0.20f
+            letterSpacing = 0.16f
         }
-        canvas.drawText("TRAVEL STAMP", centerX, centerY + radius * 0.32f, stampLabelPaint)
+        canvas.drawText("TRAVEL STAMP", centerX, centerY + radius * 0.31f, stampLabelPaint)
 
         // Serial box e.g. #001
-        val boxWidth = radius * 0.65f
-        val boxHeight = radius * 0.18f
+        val boxWidth = radius * 0.60f
+        val boxHeight = radius * 0.16f
         val boxRect = RectF(
             centerX - boxWidth / 2f,
-            centerY + radius * 0.44f,
+            centerY + radius * 0.42f,
             centerX + boxWidth / 2f,
-            centerY + radius * 0.44f + boxHeight
+            centerY + radius * 0.42f + boxHeight
         )
         val boxBorderPaint = Paint().apply {
             isAntiAlias = true
@@ -679,11 +864,11 @@ object PosterRenderer {
         val codePaint = Paint().apply {
             isAntiAlias = true
             color = inkColor
-            textSize = radius * 0.12f
+            textSize = radius * 0.105f
             typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        canvas.drawText(stamp.stampCode, centerX, centerY + radius * 0.44f + boxHeight * 0.72f, codePaint)
+        canvas.drawText(stamp.stampCode, centerX, centerY + radius * 0.42f + boxHeight * 0.72f, codePaint)
     }
 
     // ==========================================
@@ -706,7 +891,6 @@ object PosterRenderer {
                 }
             }
 
-            // 1. Inspect dimensions without loading pixels
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
@@ -718,7 +902,6 @@ object PosterRenderer {
             val outHeight = options.outHeight
             if (outWidth <= 0 || outHeight <= 0) return null
 
-            // 2. Calculate safe power-of-2 sample size
             var sampleSize = 1
             if (outHeight > reqHeight || outWidth > reqWidth) {
                 val halfHeight = outHeight / 2
@@ -728,7 +911,6 @@ object PosterRenderer {
                 }
             }
 
-            // 3. Decode scaled bitmap
             val decodeOptions = BitmapFactory.Options().apply {
                 inSampleSize = sampleSize
                 inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -738,7 +920,6 @@ object PosterRenderer {
                 BitmapFactory.decodeStream(input, null, decodeOptions)
             } ?: return null
 
-            // 4. Handle EXIF orientation
             val orientation = getExifOrientation(context, uri, uriString)
             val matrix = Matrix()
             when (orientation) {
@@ -788,10 +969,6 @@ object PosterRenderer {
         }
     }
 
-    /**
-     * Center-crop / fill transformation with pan and zoom.
-     * Prevents image distortion regardless of source aspect ratio.
-     */
     private fun drawTransformedPhoto(
         canvas: Canvas,
         bitmap: Bitmap,
@@ -805,7 +982,6 @@ object PosterRenderer {
         val srcHeight = bitmap.height.toFloat()
         val clampedZoom = zoom.coerceIn(1.0f, 3.5f)
 
-        // Center-crop base scale to fill target 9:16 rectangle
         val scaleX = targetWidth / srcWidth
         val scaleY = targetHeight / srcHeight
         val baseScale = max(scaleX, scaleY)
@@ -814,7 +990,6 @@ object PosterRenderer {
         val scaledW = srcWidth * finalScale
         val scaledH = srcHeight * finalScale
 
-        // Compute translation so photo is centered by default + user pan
         val maxPanX = max(0f, (scaledW - targetWidth) / 2f)
         val maxPanY = max(0f, (scaledH - targetHeight) / 2f)
         val clampedPanX = (panX * targetWidth).coerceIn(-maxPanX, maxPanX)
@@ -836,9 +1011,80 @@ object PosterRenderer {
     }
 
     // ==========================================
-    // TEXT WRAPPING & UNICODE SAFETY
+    // RESPONSIVE TEXT WRAPPING & AUTO-FITTING
     // ==========================================
-    fun wrapAndLimitText(text: String, paint: Paint, maxWidth: Float, maxLines: Int): List<String> {
+
+    /**
+     * Dynamically finds the optimal font size between maxTextSize and minTextSize
+     * so that multi-line text wraps nicely into maxLines without clipping or truncation.
+     */
+    fun fitResponsiveText(
+        text: String,
+        basePaint: Paint,
+        maxWidth: Float,
+        maxLines: Int,
+        maxTextSize: Float,
+        minTextSize: Float,
+        lineSpacingMultiplier: Float = 1.25f
+    ): FittedTextLayout {
+        val workingPaint = Paint(basePaint)
+        var currentSize = maxTextSize
+        val step = 1.5f
+
+        while (currentSize >= minTextSize) {
+            workingPaint.textSize = currentSize
+            val lines = wrapTextToLines(text, workingPaint, maxWidth)
+            if (lines.size <= maxLines) {
+                val lineHeight = currentSize * lineSpacingMultiplier
+                val totalHeight = lines.size * lineHeight
+                return FittedTextLayout(
+                    lines = lines,
+                    paint = workingPaint,
+                    lineHeight = lineHeight,
+                    totalHeight = totalHeight
+                )
+            }
+            currentSize -= step
+        }
+
+        // At minimum text size, wrap and limit with graceful ellipsis fallback
+        workingPaint.textSize = minTextSize
+        val limitedLines = wrapAndLimitText(text, workingPaint, maxWidth, maxLines)
+        val lineHeight = minTextSize * lineSpacingMultiplier
+        val totalHeight = limitedLines.size * lineHeight
+
+        return FittedTextLayout(
+            lines = limitedLines,
+            paint = workingPaint,
+            lineHeight = lineHeight,
+            totalHeight = totalHeight
+        )
+    }
+
+    /**
+     * Dynamically fits a single line of text by scaling down text size within maxWidth.
+     */
+    fun fitSingleLineText(
+        text: String,
+        paint: Paint,
+        maxWidth: Float,
+        maxTextSize: Float,
+        minTextSize: Float
+    ): String {
+        var currentSize = maxTextSize
+        val step = 1.0f
+        while (currentSize >= minTextSize) {
+            paint.textSize = currentSize
+            if (paint.measureText(text) <= maxWidth) {
+                return text
+            }
+            currentSize -= step
+        }
+        paint.textSize = minTextSize
+        return truncateTextSingleLine(text, paint, maxWidth)
+    }
+
+    fun wrapTextToLines(text: String, paint: Paint, maxWidth: Float): List<String> {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return emptyList()
 
@@ -853,23 +1099,39 @@ object PosterRenderer {
             } else {
                 if (currentLine.isNotEmpty()) {
                     lines.add(currentLine)
-                    if (lines.size >= maxLines) break
+                    currentLine = ""
                 }
-                currentLine = word
+                // If single word itself exceeds maxWidth on its own
+                if (paint.measureText(word) > maxWidth) {
+                    var remaining = word
+                    while (remaining.isNotEmpty()) {
+                        var takeChars = remaining.length
+                        while (takeChars > 1 && paint.measureText(remaining.substring(0, takeChars)) > maxWidth) {
+                            takeChars--
+                        }
+                        lines.add(remaining.substring(0, takeChars))
+                        remaining = remaining.substring(takeChars)
+                    }
+                } else {
+                    currentLine = word
+                }
             }
         }
-
-        if (lines.size < maxLines && currentLine.isNotEmpty()) {
+        if (currentLine.isNotEmpty()) {
             lines.add(currentLine)
         }
-
-        // If the last line still overflows or there are more words left, truncate with ellipsis
-        if (lines.isNotEmpty()) {
-            val lastIdx = lines.lastIndex
-            lines[lastIdx] = truncateTextSingleLine(lines[lastIdx], paint, maxWidth)
-        }
-
         return lines
+    }
+
+    fun wrapAndLimitText(text: String, paint: Paint, maxWidth: Float, maxLines: Int): List<String> {
+        val allLines = wrapTextToLines(text, paint, maxWidth)
+        if (allLines.isEmpty()) return emptyList()
+        if (allLines.size <= maxLines) return allLines
+
+        val result = allLines.take(maxLines).toMutableList()
+        val lastIdx = result.lastIndex
+        result[lastIdx] = truncateTextSingleLine(result[lastIdx], paint, maxWidth)
+        return result
     }
 
     fun truncateTextSingleLine(text: String, paint: Paint, maxWidth: Float): String {
@@ -878,7 +1140,7 @@ object PosterRenderer {
         while (truncated.isNotEmpty() && paint.measureText("$truncated…") > maxWidth) {
             truncated = truncated.dropLast(1)
         }
-        return "$truncated…"
+        return if (truncated.isNotEmpty()) "$truncated…" else text.take(1)
     }
 
     private fun parseColor(hex: String, fallback: Int): Int {

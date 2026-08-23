@@ -16,6 +16,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.ui.poster.PosterTemplate
+import com.example.ui.poster.StampEditionFormat
 import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.AddMomentScreen
 import com.example.ui.screens.CollectionScreen
@@ -41,14 +43,18 @@ object Destinations {
     const val COLLECTION = "collection"
     const val SETTINGS = "settings"
     const val ABOUT = "about"
-    const val POSTER_EXPORT = "poster_export/{tripId}"
+    const val POSTER_EXPORT = "poster_export/{tripId}?format={format}&template={template}"
 
     fun tripCard(tripId: Long) = "trip_card/$tripId"
     fun addMoment(tripId: Long) = "add_moment/$tripId"
     fun editMoment(tripId: Long, momentId: Long) = "edit_moment/$tripId/$momentId"
     fun finishTrip(tripId: Long) = "finish_trip/$tripId"
     fun travelStamp(tripId: Long) = "travel_stamp/$tripId"
-    fun posterExport(tripId: Long) = "poster_export/$tripId"
+    fun posterExport(
+        tripId: Long,
+        format: StampEditionFormat = StampEditionFormat.PORTRAIT,
+        template: PosterTemplate = PosterTemplate.PHOTO_STAMP
+    ) = "poster_export/$tripId?format=${format.name}&template=${template.name}"
 }
 
 @Composable
@@ -227,15 +233,33 @@ fun TravelNavHost(
                 },
                 onCreatePosterClick = { id ->
                     navController.navigate(Destinations.posterExport(id))
+                },
+                onCreateEditionClick = { id, format, template ->
+                    navController.navigate(Destinations.posterExport(id, format, template))
                 }
             )
         }
 
         composable(
             route = Destinations.POSTER_EXPORT,
-            arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+            arguments = listOf(
+                navArgument("tripId") { type = NavType.LongType },
+                navArgument("format") {
+                    type = NavType.StringType
+                    defaultValue = "PORTRAIT"
+                },
+                navArgument("template") {
+                    type = NavType.StringType
+                    defaultValue = "PHOTO_STAMP"
+                }
+            )
         ) { backStackEntry ->
             val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+            val formatStr = backStackEntry.arguments?.getString("format") ?: "PORTRAIT"
+            val templateStr = backStackEntry.arguments?.getString("template") ?: "PHOTO_STAMP"
+            val initialFormat = try { StampEditionFormat.valueOf(formatStr) } catch (_: Exception) { StampEditionFormat.PORTRAIT }
+            val initialTemplate = try { PosterTemplate.valueOf(templateStr) } catch (_: Exception) { PosterTemplate.PHOTO_STAMP }
+
             androidx.compose.runtime.LaunchedEffect(tripId) {
                 viewModel.selectTrip(tripId)
             }
@@ -245,7 +269,9 @@ fun TravelNavHost(
                 viewModel = viewModel,
                 onNavigateBack = {
                     navController.popBackStack()
-                }
+                },
+                initialFormat = initialFormat,
+                initialTemplate = initialTemplate
             )
         }
 

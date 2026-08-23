@@ -262,6 +262,8 @@ fun TravelStampCard(
 
 /**
  * High-fidelity, authentic circular/scalloped Travel Stamp rendering.
+ * Uses bounded dynamic scaling so long destinations (e.g. Harishchandragad, Umbrande Waterfall)
+ * wrap and scale naturally without ugly ellipsis or text clipping across all sizes.
  */
 @Composable
 fun TravelStampView(
@@ -271,6 +273,7 @@ fun TravelStampView(
     rotation: Float = -1.5f
 ) {
     val inkColor = parseInkColor(stamp.inkColorHex, ForestPine)
+    val scaleFactor = (size.value / 230f).coerceIn(0.40f, 2.0f)
 
     Box(
         modifier = modifier
@@ -283,11 +286,11 @@ fun TravelStampView(
             drawStampBorder(inkColor = inkColor, style = stamp.stampStyle)
         }
 
-        // Inner Content Layout
+        // Inner Content Layout with proportional padding based on stamp size
         Column(
             modifier = Modifier
-                .padding(22.dp)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .padding((18 * scaleFactor).dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -300,41 +303,65 @@ fun TravelStampView(
             }
             Text(
                 text = emblemEmoji,
-                fontSize = 18.sp,
+                fontSize = (17 * scaleFactor).sp,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height((2 * scaleFactor).dp))
 
-            // Destination / Title
+            // Destination / Title: Dynamic bounded sizing based on length so long names never clip or ellipsis
+            val titleLength = stamp.title.length
+            val titleFontSize = when {
+                titleLength <= 14 -> (14.5f * scaleFactor).sp
+                titleLength <= 22 -> (12.5f * scaleFactor).sp
+                titleLength <= 32 -> (10.8f * scaleFactor).sp
+                else -> (9.2f * scaleFactor).sp
+            }
+            val titleLineHeight = when {
+                titleLength <= 14 -> (16.0f * scaleFactor).sp
+                titleLength <= 22 -> (14.0f * scaleFactor).sp
+                titleLength <= 32 -> (12.0f * scaleFactor).sp
+                else -> (10.5f * scaleFactor).sp
+            }
+
             Text(
                 text = stamp.title.uppercase(),
                 color = inkColor,
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                lineHeight = 16.sp,
-                letterSpacing = 0.5.sp,
+                fontSize = titleFontSize,
+                lineHeight = titleLineHeight,
+                letterSpacing = (0.4f * scaleFactor).sp,
                 textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                maxLines = 3
             )
 
             if (stamp.destination.isNotBlank()) {
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height((2 * scaleFactor).dp))
+                val destLength = stamp.destination.length
+                val destFontSize = when {
+                    destLength <= 18 -> (8.5f * scaleFactor).sp
+                    destLength <= 30 -> (7.5f * scaleFactor).sp
+                    else -> (6.5f * scaleFactor).sp
+                }
+                val destLineHeight = when {
+                    destLength <= 18 -> (9.5f * scaleFactor).sp
+                    destLength <= 30 -> (8.5f * scaleFactor).sp
+                    else -> (7.5f * scaleFactor).sp
+                }
                 Text(
                     text = stamp.destination.uppercase().replace(",", " •"),
                     color = inkColor.copy(alpha = 0.9f),
-                    fontSize = 9.sp,
+                    fontSize = destFontSize,
+                    lineHeight = destLineHeight,
                     fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.6.sp,
+                    letterSpacing = (0.5f * scaleFactor).sp,
                     textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 2
                 )
             }
 
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height((2.5f * scaleFactor).dp))
 
             // Date Text
             Row(
@@ -344,51 +371,50 @@ fun TravelStampView(
                 Text(
                     text = "━◆ ",
                     color = inkColor.copy(alpha = 0.6f),
-                    fontSize = 9.sp
+                    fontSize = (8.5f * scaleFactor).sp
                 )
                 Text(
                     text = stamp.dateText.uppercase(),
                     color = inkColor,
-                    fontSize = 9.sp,
+                    fontSize = (8.5f * scaleFactor).sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    letterSpacing = (0.6f * scaleFactor).sp,
+                    maxLines = 1
                 )
                 Text(
                     text = " ◆━",
                     color = inkColor.copy(alpha = 0.6f),
-                    fontSize = 9.sp
+                    fontSize = (8.5f * scaleFactor).sp
                 )
             }
 
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height((2.5f * scaleFactor).dp))
 
             // Stamp Badge Title & Sequential ID
             Text(
                 text = "TRAVEL STAMP",
                 color = inkColor.copy(alpha = 0.85f),
-                fontSize = 8.5.sp,
+                fontSize = (7.5f * scaleFactor).sp,
                 fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 1.2.sp,
+                letterSpacing = (1.0f * scaleFactor).sp,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height((2 * scaleFactor).dp))
 
             // Stamp Serial / Code (e.g. #001)
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .border(1.dp, inkColor.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 7.dp, vertical = 1.dp)
+                    .clip(RoundedCornerShape((3.5f * scaleFactor).dp))
+                    .border((1 * scaleFactor).dp, inkColor.copy(alpha = 0.7f), RoundedCornerShape((3.5f * scaleFactor).dp))
+                    .padding(horizontal = (6 * scaleFactor).dp, vertical = (1 * scaleFactor).dp)
             ) {
                 Text(
                     text = stamp.stampCode,
                     color = inkColor,
-                    fontSize = 10.sp,
+                    fontSize = (9 * scaleFactor).sp,
                     fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 1.2.sp
+                    letterSpacing = (1.0f * scaleFactor).sp
                 )
             }
         }

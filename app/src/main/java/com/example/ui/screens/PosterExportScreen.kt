@@ -1,13 +1,16 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,15 +33,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -50,6 +55,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -59,6 +65,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +77,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -93,6 +101,8 @@ import com.example.ui.components.parseInkColor
 import com.example.ui.poster.PosterExporter
 import com.example.ui.poster.PosterRenderConfig
 import com.example.ui.poster.PosterTemplate
+import com.example.ui.poster.StampEditionFormat
+import com.example.ui.poster.StampSize
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.OchreGold
 import com.example.ui.theme.SandCanvasLight
@@ -110,6 +120,8 @@ fun PosterExportScreen(
     tripId: Long,
     viewModel: TravelViewModel,
     onNavigateBack: () -> Unit,
+    initialFormat: StampEditionFormat = StampEditionFormat.PORTRAIT,
+    initialTemplate: PosterTemplate = PosterTemplate.PASSPORT_STAMP,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -130,7 +142,7 @@ fun PosterExportScreen(
         if (stamp != null && trip != null) {
             isInitialLoading = false
         } else {
-            delay(1000)
+            delay(800)
             isInitialLoading = false
         }
     }
@@ -138,13 +150,13 @@ fun PosterExportScreen(
     if (stamp == null || trip == null) {
         if (isInitialLoading) {
             LoadingView(
-                message = "Preparing poster canvas...",
+                message = "Preparing stamp edition canvas...",
                 testTag = "poster_loading_view"
             )
         } else {
             ErrorStateView(
                 title = "Official Stamp Required",
-                message = "Story posters are generated exclusively for completed journeys that have an official Travel Stamp.",
+                message = "Stamp editions are generated exclusively for completed journeys that have an official Travel Stamp.",
                 retryAction = {
                     isInitialLoading = true
                     viewModel.selectTrip(tripId)
@@ -161,26 +173,127 @@ fun PosterExportScreen(
     val currentTrip = trip!!
     val currentStamp = stamp!!
 
-    // Moment photos available for this trip
-    val photoMoments = remember(moments) {
-        moments.filter { !it.imageUri.isNullOrBlank() }
+    // Format & Template selection state
+    var selectedFormat by rememberSaveable(initialFormat) { mutableStateOf(initialFormat) }
+    var selectedTemplate by rememberSaveable(initialTemplate) { mutableStateOf(initialTemplate) }
+
+    // Moments belonging to current trip only
+    val photoMoments = remember(moments, currentTrip.id) {
+        moments.filter { it.tripId == currentTrip.id && !it.imageUri.isNullOrBlank() }
     }
 
-    // Interactive State
-    var selectedTemplate by remember { mutableStateOf(PosterTemplate.PHOTO_STAMP) }
-    var selectedPhotoUri by remember(photoMoments) {
-        mutableStateOf(photoMoments.firstOrNull()?.imageUri)
-    }
+    // Photo selection state (No automatic silent photo selection)
+    var selectedPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Pan & Zoom parameters for Template A
-    var panX by remember { mutableFloatStateOf(0f) }
-    var panY by remember { mutableFloatStateOf(0f) }
-    var zoom by remember { mutableFloatStateOf(1f) }
+    // Photo transform parameters (Zoom & Pan)
+    var panX by rememberSaveable { mutableFloatStateOf(0f) }
+    var panY by rememberSaveable { mutableFloatStateOf(0f) }
+    var zoom by rememberSaveable { mutableFloatStateOf(1f) }
 
-    // Export operation states (single active export guard)
+    // Stamp layout parameters (Draggable position & Discrete size)
+    var stampNormX by rememberSaveable { mutableFloatStateOf(0.5f) }
+    var stampNormY by rememberSaveable { mutableFloatStateOf(0.44f) }
+    var selectedStampSize by rememberSaveable { mutableStateOf(StampSize.MEDIUM) }
+
+    // Export operation states
     var isSavingToGallery by remember { mutableStateOf(false) }
     var isSharing by remember { mutableStateOf(false) }
     val isExportActive = isSavingToGallery || isSharing
+
+    // Unsaved changes tracking
+    val hasPhotoEdits = remember(selectedPhotoUri, panX, panY, zoom, stampNormX, stampNormY, selectedStampSize) {
+        selectedPhotoUri != null ||
+                panX != 0f ||
+                panY != 0f ||
+                zoom != 1f ||
+                stampNormX != 0.5f ||
+                stampNormY != 0.44f ||
+                selectedStampSize != StampSize.MEDIUM
+    }
+
+    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
+
+    // Handle Back action with confirmation if changes were made
+    val handleBack = {
+        if (selectedTemplate == PosterTemplate.PHOTO_STAMP && hasPhotoEdits) {
+            showDiscardDialog = true
+        } else {
+            onNavigateBack()
+        }
+    }
+
+    BackHandler(enabled = selectedTemplate == PosterTemplate.PHOTO_STAMP && hasPhotoEdits) {
+        showDiscardDialog = true
+    }
+
+    // System Photo Picker launcher with error safety
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                // Verify URI readability
+                context.contentResolver.openInputStream(uri)?.close()
+                selectedPhotoUri = uri.toString()
+                panX = 0f
+                panY = 0f
+                zoom = 1f
+            } catch (_: Exception) {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("Couldn’t open this photo. Choose another image.")
+                }
+            }
+        }
+    }
+
+    val isPassportMode = selectedTemplate == PosterTemplate.PASSPORT_STAMP
+    val topTitle = if (isPassportMode) "PASSPORT STAMP" else "PHOTO + STAMP"
+    val topSubtitle = if (isPassportMode) {
+        "${selectedFormat.title} • Classic Passport"
+    } else {
+        "${selectedFormat.title} • Photo Edition"
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = {
+                Text(
+                    text = "Discard changes?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Are you sure you want to discard your photo stamp edits?")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardDialog = false
+                        onNavigateBack()
+                    },
+                    modifier = Modifier.testTag("discard_changes_button")
+                ) {
+                    Text(
+                        text = "DISCARD",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDiscardDialog = false },
+                    modifier = Modifier.testTag("keep_editing_button")
+                ) {
+                    Text(
+                        text = "KEEP EDITING",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -190,13 +303,13 @@ fun PosterExportScreen(
                 title = {
                     Column {
                         Text(
-                            text = "STORY POSTER (9:16)",
+                            text = topTitle,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
                         Text(
-                            text = "1080 × 1920 High Resolution",
+                            text = topSubtitle,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -204,7 +317,7 @@ fun PosterExportScreen(
                 },
                 navigationIcon = {
                     IconButton(
-                        onClick = onNavigateBack,
+                        onClick = handleBack,
                         modifier = Modifier.testTag("poster_back_button")
                     ) {
                         Icon(
@@ -228,42 +341,57 @@ fun PosterExportScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. Template Selector Tabs
+            // 1. Format Selector (Square / Portrait / Story)
             item {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = Spacing.xs),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                 ) {
-                    FilterChip(
-                        selected = selectedTemplate == PosterTemplate.PHOTO_STAMP,
-                        onClick = { selectedTemplate = PosterTemplate.PHOTO_STAMP },
-                        label = { Text("📸 Photo + Stamp") },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("template_photo_stamp_chip"),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ForestPine,
-                            selectedLabelColor = Color.White
-                        )
+                    Text(
+                        text = "FORMAT",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 1.sp
                     )
-                    FilterChip(
-                        selected = selectedTemplate == PosterTemplate.PASSPORT_STAMP,
-                        onClick = { selectedTemplate = PosterTemplate.PASSPORT_STAMP },
-                        label = { Text("📜 Passport Stamp") },
+
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .testTag("template_passport_stamp_chip"),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ForestPine,
-                            selectedLabelColor = Color.White
-                        )
-                    )
+                            .fillMaxWidth()
+                            .testTag("format_selection_row"),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    ) {
+                        listOf(
+                            StampEditionFormat.SQUARE,
+                            StampEditionFormat.PORTRAIT,
+                            StampEditionFormat.STORY
+                        ).forEach { format ->
+                            val isSelected = selectedFormat == format
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { selectedFormat = format },
+                                label = {
+                                    Text(
+                                        text = format.title,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("format_chip_${format.title.lowercase()}"),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = ForestPine,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
                 }
             }
 
-            // 2. Interactive 9:16 Poster Live Preview Canvas
+            // 2. Responsive Live Preview Canvas (WYSIWYG with Pan, Zoom & Draggable Stamp)
             item {
                 Box(
                     modifier = Modifier
@@ -271,104 +399,324 @@ fun PosterExportScreen(
                         .padding(vertical = Spacing.xs),
                     contentAlignment = Alignment.Center
                 ) {
-                    PosterLivePreview(
+                    ResponsivePosterLivePreview(
                         trip = currentTrip,
                         stamp = currentStamp,
                         template = selectedTemplate,
+                        format = selectedFormat,
                         photoUri = selectedPhotoUri,
                         panX = panX,
                         panY = panY,
                         zoom = zoom,
-                        onTransform = { dPanX, dPanY, dZoom ->
+                        stampNormX = stampNormX,
+                        stampNormY = stampNormY,
+                        stampSize = selectedStampSize,
+                        onPhotoTransform = { dPanX, dPanY, dZoom ->
                             if (selectedTemplate == PosterTemplate.PHOTO_STAMP && !selectedPhotoUri.isNullOrBlank()) {
-                                zoom = (zoom * dZoom).coerceIn(1.0f, 3.0f)
-                                panX = (panX + dPanX / 300f).coerceIn(-0.5f, 0.5f)
-                                panY = (panY + dPanY / 300f).coerceIn(-0.5f, 0.5f)
+                                zoom = (zoom * dZoom).coerceIn(1.0f, 3.5f)
+                                panX = (panX + dPanX / 320f).coerceIn(-0.5f, 0.5f)
+                                panY = (panY + dPanY / 320f).coerceIn(-0.5f, 0.5f)
                             }
+                        },
+                        onStampDrag = { dNormX, dNormY ->
+                            if (selectedTemplate == PosterTemplate.PHOTO_STAMP) {
+                                val minX = 0.22f
+                                val maxX = 0.78f
+                                val minY = 0.22f
+                                val maxY = 0.70f
+                                stampNormX = (stampNormX + dNormX).coerceIn(minX, maxX)
+                                stampNormY = (stampNormY + dNormY).coerceIn(minY, maxY)
+                            }
+                        },
+                        onSelectFromGallery = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
                         }
                     )
                 }
             }
 
-            // 3. Pan / Zoom controls & photo selector for Template A
+            // 3. Photo & Stamp Editor Controls (Only when PHOTO_STAMP is active)
             if (selectedTemplate == PosterTemplate.PHOTO_STAMP) {
+                // Section A: Stamp Controls (Revealed ONLY after a photo is selected)
+                if (!selectedPhotoUri.isNullOrBlank()) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("stamp_editor_controls_card"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(Spacing.cardPadding),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                // Header: Stamp Size & Hint
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.TouchApp,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "STAMP CONTROLS",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            letterSpacing = 0.8.sp
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "Drag stamp to position",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                // Discrete Stamp Size Options: Small, Medium, Large
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                                ) {
+                                    StampSize.values().forEach { sizeOption ->
+                                        val isSelected = selectedStampSize == sizeOption
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = { selectedStampSize = sizeOption },
+                                            label = {
+                                                Text(
+                                                    text = sizeOption.title,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("stamp_size_${sizeOption.name.lowercase()}"),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = ForestPine,
+                                                selectedLabelColor = Color.White
+                                            )
+                                        )
+                                    }
+                                }
+
+                                // Reset Action Chips Row
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Reset Stamp Position & Size
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                stampNormX = 0.5f
+                                                stampNormY = 0.44f
+                                                selectedStampSize = StampSize.MEDIUM
+                                            }
+                                            .testTag("reset_stamp_button")
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center,
+                                            modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.RestartAlt,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Reset Stamp",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    // Reset Photo Frame (Zoom & Pan)
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                panX = 0f
+                                                panY = 0f
+                                                zoom = 1f
+                                            }
+                                            .testTag("reset_photo_framing_button")
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center,
+                                            modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.RestartAlt,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Reset Frame",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Section B: Photo Selection (Progressive empty vs. populated state)
                 item {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                     ) {
+                        val isPhotoSelected = !selectedPhotoUri.isNullOrBlank()
+                        val sectionTitle = if (isPhotoSelected) "CHOOSE PHOTO" else "SELECT A PHOTO"
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "SELECT JOURNEY PHOTO",
+                                text = sectionTitle,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 letterSpacing = 1.sp
                             )
 
-                            if (zoom != 1f || panX != 0f || panY != 0f) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier
-                                        .clickable {
-                                            zoom = 1f
-                                            panX = 0f
-                                            panY = 0f
-                                        }
-                                        .testTag("reset_transform_button")
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = Spacing.sm, vertical = 4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.RestartAlt,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp),
-                                            tint = ForestPine
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "Reset Frame",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = ForestPine
+                            // Pick from Device Gallery Button (Available in populated and unpopulated states)
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = ForestPine.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, ForestPine.copy(alpha = 0.3f)),
+                                modifier = Modifier
+                                    .clickable {
+                                        photoPickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                         )
                                     }
+                                    .testTag("choose_from_gallery_button")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = Spacing.sm, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PhotoLibrary,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = ForestPine
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "CHOOSE FROM GALLERY",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = ForestPine
+                                    )
                                 }
                             }
                         }
 
                         if (photoMoments.isEmpty()) {
-                            // Branded Fallback Info Badge
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .padding(Spacing.sm),
-                                verticalAlignment = Alignment.CenterVertically
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = ForestPine,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(Spacing.sm))
-                                Text(
-                                    text = "No Moment photos in this journey. A branded expedition backdrop is used.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(Spacing.lg),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PhotoLibrary,
+                                        contentDescription = null,
+                                        tint = ForestPine,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Text(
+                                        text = "No journey photos yet",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Choose a photo from your device to create this edition.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(Spacing.xs))
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = ForestPine,
+                                        modifier = Modifier
+                                            .clickable {
+                                                photoPickerLauncher.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                )
+                                            }
+                                            .testTag("choose_from_gallery_empty_button")
+                                    ) {
+                                        Text(
+                                            text = "CHOOSE FROM GALLERY",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = 8.dp)
+                                        )
+                                    }
+                                }
                             }
                         } else {
-                            // Photo carousel from this trip's moments
+                            if (!isPhotoSelected) {
+                                Text(
+                                    text = "From your journey moments:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                            }
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                                 modifier = Modifier
@@ -379,7 +727,7 @@ fun PosterExportScreen(
                                     val isSelected = moment.imageUri == selectedPhotoUri
                                     Box(
                                         modifier = Modifier
-                                            .size(68.dp)
+                                            .size(72.dp)
                                             .clip(RoundedCornerShape(12.dp))
                                             .border(
                                                 width = if (isSelected) 3.dp else 1.dp,
@@ -424,11 +772,6 @@ fun PosterExportScreen(
                                     }
                                 }
                             }
-                            Text(
-                                text = "💡 Pinch to zoom, drag to pan within the 9:16 frame.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
@@ -442,21 +785,33 @@ fun PosterExportScreen(
                         .padding(top = Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
+                    val isPhotoMissing = selectedTemplate == PosterTemplate.PHOTO_STAMP && selectedPhotoUri == null
+
                     // SAVE TO GALLERY BUTTON
                     TravelPrimaryButton(
-                        text = "SAVE POSTER (1080×1920)",
+                        text = "SAVE TO GALLERY",
                         icon = Icons.Default.Download,
                         isLoading = isSavingToGallery,
-                        enabled = !isExportActive,
+                        enabled = !isExportActive && !isPhotoMissing,
                         onClick = {
                             if (isExportActive) return@TravelPrimaryButton
+                            if (isPhotoMissing) {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Please select a photo first")
+                                }
+                                return@TravelPrimaryButton
+                            }
                             isSavingToGallery = true
                             val config = PosterRenderConfig(
                                 template = selectedTemplate,
+                                format = selectedFormat,
                                 photoUri = if (selectedTemplate == PosterTemplate.PHOTO_STAMP) selectedPhotoUri else null,
                                 panX = panX,
                                 panY = panY,
-                                zoom = zoom
+                                zoom = zoom,
+                                stampSize = selectedStampSize,
+                                stampPositionX = stampNormX,
+                                stampPositionY = stampNormY
                             )
 
                             coroutineScope.launch {
@@ -467,7 +822,12 @@ fun PosterExportScreen(
                                         stamp = currentStamp,
                                         config = config
                                     )
-                                    val saved = PosterExporter.savePosterToGallery(context, bitmap, currentStamp)
+                                    val saved = PosterExporter.savePosterToGallery(
+                                        context = context,
+                                        bitmap = bitmap,
+                                        stamp = currentStamp,
+                                        format = selectedFormat
+                                    )
                                     try {
                                         bitmap.recycle()
                                     } catch (_: Exception) {}
@@ -475,30 +835,40 @@ fun PosterExportScreen(
                                 }
                                 isSavingToGallery = false
                                 if (success) {
-                                    snackbarHostState.showSnackbar("Poster saved to Gallery (1080×1920) ✓")
+                                    snackbarHostState.showSnackbar("Stamp saved to gallery")
                                 } else {
-                                    snackbarHostState.showSnackbar("Unable to save poster. Please try again.")
+                                    snackbarHostState.showSnackbar("Couldn't save stamp. Try again.")
                                 }
                             }
                         },
                         testTag = "save_poster_to_gallery_button"
                     )
 
-                    // SHARE STORY POSTER BUTTON
+                    // SHARE BUTTON
                     TravelOutlinedButton(
-                        text = "SHARE 9:16 STORY POSTER",
+                        text = "SHARE",
                         icon = Icons.Default.Share,
                         isLoading = isSharing,
-                        enabled = !isExportActive,
+                        enabled = !isExportActive && !isPhotoMissing,
                         onClick = {
                             if (isExportActive) return@TravelOutlinedButton
+                            if (isPhotoMissing) {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Please select a photo first")
+                                }
+                                return@TravelOutlinedButton
+                            }
                             isSharing = true
                             val config = PosterRenderConfig(
                                 template = selectedTemplate,
+                                format = selectedFormat,
                                 photoUri = if (selectedTemplate == PosterTemplate.PHOTO_STAMP) selectedPhotoUri else null,
                                 panX = panX,
                                 panY = panY,
-                                zoom = zoom
+                                zoom = zoom,
+                                stampSize = selectedStampSize,
+                                stampPositionX = stampNormX,
+                                stampPositionY = stampNormY
                             )
 
                             coroutineScope.launch {
@@ -509,7 +879,12 @@ fun PosterExportScreen(
                                         stamp = currentStamp,
                                         config = config
                                     )
-                                    val uri = PosterExporter.getShareablePosterUri(context, bitmap, currentStamp)
+                                    val uri = PosterExporter.getShareablePosterUri(
+                                        context = context,
+                                        bitmap = bitmap,
+                                        stamp = currentStamp,
+                                        format = selectedFormat
+                                    )
                                     try {
                                         bitmap.recycle()
                                     } catch (_: Exception) {}
@@ -522,15 +897,15 @@ fun PosterExportScreen(
                                         putExtra(Intent.EXTRA_STREAM, shareUri)
                                         putExtra(
                                             Intent.EXTRA_TEXT,
-                                            "Travel Stamp 9:16 Story Poster for ${currentStamp.title} (${currentStamp.stampCode})! 🏔️✨"
+                                            "Official Travel Stamp for ${currentStamp.title} (${currentStamp.stampCode})! 🏔️✨"
                                         )
                                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     }
                                     context.startActivity(
-                                        Intent.createChooser(shareIntent, "Share 9:16 Story Poster")
+                                        Intent.createChooser(shareIntent, "Share Travel Stamp")
                                     )
                                 } else {
-                                    snackbarHostState.showSnackbar("Unable to prepare poster for sharing.")
+                                    snackbarHostState.showSnackbar("Couldn't prepare stamp for sharing.")
                                 }
                             }
                         },
@@ -547,28 +922,41 @@ fun PosterExportScreen(
 }
 
 /**
- * Live 9:16 Preview composable replicating the high-res 1080x1920 layout faithfully in Compose.
+ * Responsive Live Preview composable adapting cleanly to Square (1:1), Portrait (3:4), and Story (9:16).
+ * Replicates the exported bitmap layout faithfully with interactive pan/zoom and draggable stamp seal.
  */
 @Composable
-private fun PosterLivePreview(
+private fun ResponsivePosterLivePreview(
     trip: Trip,
     stamp: TravelStamp,
     template: PosterTemplate,
+    format: StampEditionFormat,
     photoUri: String?,
     panX: Float,
     panY: Float,
     zoom: Float,
-    onTransform: (dPanX: Float, dPanY: Float, dZoom: Float) -> Unit,
+    stampNormX: Float,
+    stampNormY: Float,
+    stampSize: StampSize,
+    onPhotoTransform: (dPanX: Float, dPanY: Float, dZoom: Float) -> Unit,
+    onStampDrag: (dNormX: Float, dNormY: Float) -> Unit,
+    onSelectFromGallery: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val inkColor = parseInkColor(stamp.inkColorHex, ForestPine)
 
+    val previewWidthFraction = when (format) {
+        StampEditionFormat.SQUARE -> 0.82f
+        StampEditionFormat.PORTRAIT -> 0.76f
+        StampEditionFormat.STORY -> 0.70f
+    }
+
     Card(
         modifier = modifier
-            .fillMaxWidth(0.72f)
-            .aspectRatio(9f / 16f)
-            .shadow(12.dp, RoundedCornerShape(16.dp))
+            .fillMaxWidth(previewWidthFraction)
+            .aspectRatio(format.aspectRatio)
+            .shadow(10.dp, RoundedCornerShape(16.dp))
             .testTag("poster_live_preview_card"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -579,6 +967,8 @@ private fun PosterLivePreview(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val previewWidth = maxWidth
             val previewHeight = maxHeight
+            val widthPx = constraints.maxWidth.toFloat()
+            val heightPx = constraints.maxHeight.toFloat()
 
             if (template == PosterTemplate.PHOTO_STAMP) {
                 // Template A: Photo + Stamp
@@ -588,7 +978,7 @@ private fun PosterLivePreview(
                             .fillMaxSize()
                             .pointerInput(photoUri) {
                                 detectTransformGestures { _, pan, gestureZoom, _ ->
-                                    onTransform(pan.x, pan.y, gestureZoom)
+                                    onPhotoTransform(pan.x, pan.y, gestureZoom)
                                 }
                             }
                     ) {
@@ -610,7 +1000,7 @@ private fun PosterLivePreview(
                         )
                     }
                 } else {
-                    // Branded backdrop fallback
+                    // Empty photo select state
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -619,7 +1009,42 @@ private fun PosterLivePreview(
                                     listOf(Color(0xFF1B332B), Color(0xFF14241F), Color(0xFF0C1512))
                                 )
                             )
-                    )
+                            .clickable { onSelectFromGallery() }
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AddPhotoAlternate,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.85f),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            Text(
+                                text = "Select a Photo",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Tap here or choose from gallery below to preview your photo edition",
+                                style = MaterialTheme.typography.bodySmall,
+                                textAlign = TextAlign.Center,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
                 }
 
                 // Gradients for text contrast
@@ -629,9 +1054,9 @@ private fun PosterLivePreview(
                         .background(
                             Brush.verticalGradient(
                                 colorStops = arrayOf(
-                                    0.0f to Color.Black.copy(alpha = 0.6f),
-                                    0.18f to Color.Transparent,
-                                    0.50f to Color.Transparent,
+                                    0.0f to Color.Black.copy(alpha = 0.55f),
+                                    0.16f to Color.Transparent,
+                                    0.55f to Color.Transparent,
                                     0.75f to Color(0xFF0A100E).copy(alpha = 0.75f),
                                     1.0f to Color(0xFF0A100E).copy(alpha = 0.95f)
                                 )
@@ -639,95 +1064,130 @@ private fun PosterLivePreview(
                         )
                 )
 
-                // Content Overlay
-                Column(
+                // Top Header Overlay
+                Text(
+                    text = "TRAVEL STAMP • EXPEDITION POSTER",
+                    fontSize = 7.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    textAlign = TextAlign.Center,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
-                    // Top Branding
-                    Text(
-                        text = "TRAVEL STAMP • EXPEDITION POSTER",
-                        fontSize = 7.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.2.sp,
-                        color = Color.White.copy(alpha = 0.85f),
-                        textAlign = TextAlign.Center
-                    )
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                )
 
-                    // Center Stamp with Badge Backdrop
+                // Draggable Stamp Seal Overlay (Active when photo is selected)
+                if (!photoUri.isNullOrBlank()) {
+                    val baseStampDp = previewWidth * 0.44f
+                    val stampSizeDp = baseStampDp * stampSize.scale
+                    val stampRadiusPx = with(LocalDensity.current) { (stampSizeDp / 2f).toPx() }
+
+                    val posX = (stampNormX * widthPx) - stampRadiusPx
+                    val posY = (stampNormY * heightPx) - stampRadiusPx
+
                     Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier
+                            .offset { IntOffset(posX.roundToInt(), posY.roundToInt()) }
+                            .size(stampSizeDp)
+                            .pointerInput(stampSize) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    val dNormX = dragAmount.x / widthPx
+                                    val dNormY = dragAmount.y / heightPx
+                                    onStampDrag(dNormX, dNormY)
+                                }
+                            }
+                            .testTag("draggable_stamp_seal"),
+                        contentAlignment = Alignment.Center
                     ) {
                         Surface(
                             shape = CircleShape,
                             color = SandCanvasLight.copy(alpha = 0.95f),
                             border = BorderStroke(1.dp, OchreGold.copy(alpha = 0.7f)),
-                            modifier = Modifier.size(136.dp),
+                            modifier = Modifier.fillMaxSize(),
                             shadowElevation = 6.dp
                         ) {}
 
                         TravelStampView(
                             stamp = stamp,
-                            size = 126.dp,
+                            size = stampSizeDp * 0.92f,
                             rotation = 0f
                         )
                     }
+                }
 
-                    // Bottom Typography
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                // Bottom Metadata Typography Overlay
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = stamp.title,
+                        fontFamily = FontFamily.Serif,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (stamp.destination.isNotBlank()) {
                         Text(
-                            text = stamp.title,
-                            fontFamily = FontFamily.Serif,
+                            text = stamp.destination.uppercase().replace(",", " •"),
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp,
-                            color = Color.White,
+                            fontSize = 8.sp,
+                            color = Color(0xFFFFAB91),
                             textAlign = TextAlign.Center,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (stamp.destination.isNotBlank()) {
-                            Text(
-                                text = stamp.destination.uppercase().replace(",", " •"),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 8.5.sp,
-                                color = Color(0xFFFFAB91),
-                                textAlign = TextAlign.Center,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.15f),
-                            border = BorderStroke(0.7.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Text(
-                                text = "📅 ${stamp.dateText.uppercase()} • ${stamp.stampCode}",
-                                fontSize = 7.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color.White.copy(alpha = 0.15f),
+                        border = BorderStroke(0.7.dp, Color.White.copy(alpha = 0.4f))
+                    ) {
                         Text(
-                            text = "TRAVEL STAMP 🏔️ • OFFICIAL DIGITAL PASSPORT",
-                            fontSize = 6.sp,
-                            color = Color.White.copy(alpha = 0.6f),
-                            letterSpacing = 0.8.sp
+                            text = "📅 ${stamp.dateText.uppercase()} • ${stamp.stampCode}",
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "TRAVEL STAMP 🏔️ • OFFICIAL DIGITAL PASSPORT",
+                        fontSize = 6.sp,
+                        color = Color.White.copy(alpha = 0.6f),
+                        letterSpacing = 0.8.sp
+                    )
                 }
             } else {
-                // Template B: Passport / Stamp Focused
+                // Template B: Responsive Passport / Stamp Focused
+                val stampSize = when (format) {
+                    StampEditionFormat.SQUARE -> 132.dp
+                    StampEditionFormat.PORTRAIT -> 154.dp
+                    StampEditionFormat.STORY -> 172.dp
+                }
+
+                val titleFontSize = when (format) {
+                    StampEditionFormat.SQUARE -> 12.5.sp
+                    StampEditionFormat.PORTRAIT -> 13.5.sp
+                    StampEditionFormat.STORY -> 14.5.sp
+                }
+
+                val destFontSize = when (format) {
+                    StampEditionFormat.SQUARE -> 8.5.sp
+                    StampEditionFormat.PORTRAIT -> 9.sp
+                    StampEditionFormat.STORY -> 9.5.sp
+                }
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -738,7 +1198,7 @@ private fun PosterLivePreview(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(8.dp),
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -755,13 +1215,13 @@ private fun PosterLivePreview(
                                 text = "OFFICIAL EXPEDITION MEMORANDUM",
                                 fontFamily = FontFamily.Serif,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 color = inkColor
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Box(
                                 modifier = Modifier
-                                    .width(80.dp)
+                                    .width(70.dp)
                                     .height(1.dp)
                                     .background(OchreGold.copy(alpha = 0.5f))
                             )
@@ -770,11 +1230,11 @@ private fun PosterLivePreview(
                         // Center Hero Stamp
                         TravelStampView(
                             stamp = stamp,
-                            size = 150.dp,
+                            size = stampSize,
                             rotation = -1f
                         )
 
-                        // Bottom Metadata
+                        // Bottom Metadata (No text truncation bug)
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.fillMaxWidth()
@@ -783,7 +1243,7 @@ private fun PosterLivePreview(
                                 text = stamp.title,
                                 fontFamily = FontFamily.Serif,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
+                                fontSize = titleFontSize,
                                 color = inkColor,
                                 textAlign = TextAlign.Center,
                                 maxLines = 2,
@@ -793,21 +1253,21 @@ private fun PosterLivePreview(
                                 Text(
                                     text = stamp.destination.uppercase().replace(",", " •"),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 9.sp,
+                                    fontSize = destFontSize,
                                     color = Terracotta,
                                     textAlign = TextAlign.Center,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            Spacer(modifier = Modifier.height(3.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "━◆ DATE: ${stamp.dateText.uppercase()} ◆━",
-                                fontSize = 8.sp,
+                                fontSize = 7.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = inkColor.copy(alpha = 0.8f)
                             )
-                            Spacer(modifier = Modifier.height(3.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
                                 color = Color.White.copy(alpha = 0.7f),
@@ -815,17 +1275,17 @@ private fun PosterLivePreview(
                             ) {
                                 Text(
                                     text = "AUTHENTICATED: ${stamp.stampCode}",
-                                    fontSize = 7.5.sp,
+                                    fontSize = 7.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
                                     color = inkColor,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(3.dp))
                             Text(
                                 text = "TRAVEL STAMP 🏔️ • OFFICIAL EXPEDITION LOG",
-                                fontSize = 6.sp,
+                                fontSize = 5.5.sp,
                                 color = inkColor.copy(alpha = 0.6f),
                                 letterSpacing = 0.8.sp
                             )

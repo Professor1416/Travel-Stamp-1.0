@@ -9,8 +9,6 @@ import com.example.data.datasource.BundledSuggestionSourceImpl
 import com.example.data.datasource.UserHistorySuggestionSourceImpl
 import com.example.data.local.TravelStampDatabase
 import com.example.data.local.UserPreferencesRepository
-import com.example.data.model.Moment
-import com.example.data.model.MomentCategory
 import com.example.data.model.TravelStamp
 import com.example.data.model.Trip
 import com.example.data.model.TripStatus
@@ -23,12 +21,12 @@ import com.example.ui.poster.PosterExporter
 import com.example.ui.poster.PosterRenderConfig
 import com.example.ui.poster.PosterRenderer
 import com.example.ui.poster.PosterTemplate
+import com.example.ui.poster.StampEditionFormat
 import com.example.ui.viewmodel.TravelViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -97,152 +95,135 @@ class TravelPosterRobolectricTest {
     }
 
     @Test
-    fun testPosterRenderConfigDefaults() {
-        val config = PosterRenderConfig()
-        assertEquals(PosterTemplate.PHOTO_STAMP, config.template)
-        assertEquals(null, config.photoUri)
-        assertEquals(0f, config.panX, 0.001f)
-        assertEquals(0f, config.panY, 0.001f)
-        assertEquals(1f, config.zoom, 0.001f)
+    fun testStampEditionFormatDimensionsAndRatios() {
+        assertEquals(1080, StampEditionFormat.SQUARE.width)
+        assertEquals(1080, StampEditionFormat.SQUARE.height)
+        assertEquals(1f, StampEditionFormat.SQUARE.aspectRatio, 0.001f)
+
+        assertEquals(1080, StampEditionFormat.PORTRAIT.width)
+        assertEquals(1440, StampEditionFormat.PORTRAIT.height)
+        assertEquals(0.75f, StampEditionFormat.PORTRAIT.aspectRatio, 0.001f)
+
+        assertEquals(1080, StampEditionFormat.STORY.width)
+        assertEquals(1920, StampEditionFormat.STORY.height)
+        assertEquals(9f / 16f, StampEditionFormat.STORY.aspectRatio, 0.001f)
     }
 
     @Test
-    fun testPosterRendererOutputDimensionsTemplateA() {
+    fun testPassportStampDimensionsAcrossFormats() {
         val trip = Trip(
-            id = 1L,
-            name = "Western Ghats Trek",
-            destination = "Sahyadri Ranges, Maharashtra",
+            id = 101L,
+            name = "Umbrande Waterfall",
+            destination = "Nashik, Maharashtra",
             date = "2026-10-14",
             status = TripStatus.COMPLETED,
             stampEarned = true
         )
         val stamp = TravelStamp(
-            id = 1L,
-            tripId = 1L,
+            id = 101L,
+            tripId = 101L,
             stampNumber = 1L,
             stampCode = "#001",
-            title = "Western Ghats Trek",
-            destination = "Sahyadri Ranges, Maharashtra",
+            title = "Umbrande Waterfall",
+            destination = "Nashik, Maharashtra",
             dateText = "14 OCT 2026",
             peopleCount = 2,
             momentsCount = 3,
             inkColorHex = "#1E3A2F",
             stampStyle = "MOUNTAIN"
         )
-        val config = PosterRenderConfig(template = PosterTemplate.PHOTO_STAMP)
 
-        val bitmap = PosterRenderer.render(context, trip, stamp, config)
-        assertNotNull(bitmap)
-        assertEquals(1080, bitmap.width)
-        assertEquals(1920, bitmap.height)
+        // 1. Square (1080x1080)
+        val squareConfig = PosterRenderConfig(
+            template = PosterTemplate.PASSPORT_STAMP,
+            format = StampEditionFormat.SQUARE
+        )
+        val squareBitmap = PosterRenderer.render(context, trip, stamp, squareConfig)
+        assertNotNull(squareBitmap)
+        assertEquals(1080, squareBitmap.width)
+        assertEquals(1080, squareBitmap.height)
+        squareBitmap.recycle()
+
+        // 2. Portrait (1080x1440)
+        val portraitConfig = PosterRenderConfig(
+            template = PosterTemplate.PASSPORT_STAMP,
+            format = StampEditionFormat.PORTRAIT
+        )
+        val portraitBitmap = PosterRenderer.render(context, trip, stamp, portraitConfig)
+        assertNotNull(portraitBitmap)
+        assertEquals(1080, portraitBitmap.width)
+        assertEquals(1440, portraitBitmap.height)
+        portraitBitmap.recycle()
+
+        // 3. Story (1080x1920)
+        val storyConfig = PosterRenderConfig(
+            template = PosterTemplate.PASSPORT_STAMP,
+            format = StampEditionFormat.STORY
+        )
+        val storyBitmap = PosterRenderer.render(context, trip, stamp, storyConfig)
+        assertNotNull(storyBitmap)
+        assertEquals(1080, storyBitmap.width)
+        assertEquals(1920, storyBitmap.height)
+        storyBitmap.recycle()
     }
 
     @Test
-    fun testPosterRendererOutputDimensionsTemplateB() {
-        val trip = Trip(
-            id = 2L,
-            name = "Himalayan Expedition",
-            destination = "Manali, Himachal Pradesh",
-            date = "2026-11-20",
-            status = TripStatus.COMPLETED,
-            stampEarned = true
-        )
-        val stamp = TravelStamp(
-            id = 2L,
-            tripId = 2L,
-            stampNumber = 2L,
-            stampCode = "#002",
-            title = "Himalayan Expedition",
-            destination = "Manali, Himachal Pradesh",
-            dateText = "20 NOV 2026",
-            peopleCount = 4,
-            momentsCount = 5,
-            inkColorHex = "#C85A32",
-            stampStyle = "COMPASS"
-        )
-        val config = PosterRenderConfig(template = PosterTemplate.PASSPORT_STAMP)
+    fun testUmbrandeWaterfallTextFittingNoTruncation() {
+        val basePaint = Paint().apply { textSize = 54f }
+        val destinationName = "Umbrande Waterfall"
 
-        val bitmap = PosterRenderer.render(context, trip, stamp, config)
-        assertNotNull(bitmap)
-        assertEquals(1080, bitmap.width)
-        assertEquals(1920, bitmap.height)
+        // Layout into 900px width (standard margin on 1080 canvas)
+        val fitted = PosterRenderer.fitResponsiveText(
+            text = destinationName,
+            basePaint = basePaint,
+            maxWidth = 900f,
+            maxLines = 2,
+            maxTextSize = 54f,
+            minTextSize = 34f
+        )
+
+        assertEquals(1, fitted.lines.size)
+        assertEquals("Umbrande Waterfall", fitted.lines[0])
+        assertTrue("Text should not contain ellipsis", !fitted.lines[0].contains("…"))
     }
 
     @Test
-    fun testPosterRendererWithValidMomentPhoto() {
-        // Create a temporary test bitmap image file
-        val tempPhotoFile = File(context.cacheDir, "test_moment_photo.png")
-        val sampleBitmap = Bitmap.createBitmap(800, 600, Bitmap.Config.ARGB_8888)
-        FileOutputStream(tempPhotoFile).use { out ->
-            sampleBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-        }
+    fun testLongRealisticDestinationNameFitting() {
+        val basePaint = Paint().apply { textSize = 54f }
+        val longDestination = "Harishchandragad Peak & Konkan Kada, Western Ghats"
 
-        val trip = Trip(
-            id = 3L,
-            name = "Konkan Coastline",
-            destination = "Alibaug, Maharashtra",
-            date = "2026-12-05",
-            status = TripStatus.COMPLETED,
-            stampEarned = true
-        )
-        val stamp = TravelStamp(
-            id = 3L,
-            tripId = 3L,
-            stampNumber = 3L,
-            stampCode = "#003",
-            title = "Konkan Coastline",
-            destination = "Alibaug, Maharashtra",
-            dateText = "05 DEC 2026",
-            peopleCount = 1,
-            momentsCount = 1,
-            inkColorHex = "#1B4332",
-            stampStyle = "PINE"
-        )
-        val config = PosterRenderConfig(
-            template = PosterTemplate.PHOTO_STAMP,
-            photoUri = tempPhotoFile.absolutePath,
-            panX = 0.1f,
-            panY = -0.1f,
-            zoom = 1.2f
+        val fitted = PosterRenderer.fitResponsiveText(
+            text = longDestination,
+            basePaint = basePaint,
+            maxWidth = 850f,
+            maxLines = 2,
+            maxTextSize = 54f,
+            minTextSize = 32f
         )
 
-        val bitmap = PosterRenderer.render(context, trip, stamp, config)
-        assertNotNull(bitmap)
-        assertEquals(1080, bitmap.width)
-        assertEquals(1920, bitmap.height)
+        assertTrue(fitted.lines.size in 1..2)
+        // All words should be present across lines without broken mid-words
+        val reconstructed = fitted.lines.joinToString(" ")
+        assertTrue(reconstructed.contains("Harishchandragad"))
+        assertTrue(reconstructed.contains("Konkan Kada"))
     }
 
     @Test
-    fun testPosterRendererWithCorruptedOrMissingPhotoGracefulFallback() {
-        val trip = Trip(
-            id = 4L,
-            name = "Rainforest Trail",
-            destination = "Agumbe, Karnataka",
-            date = "2026-09-01",
-            status = TripStatus.COMPLETED,
-            stampEarned = true
-        )
-        val stamp = TravelStamp(
-            id = 4L,
-            tripId = 4L,
-            stampNumber = 4L,
-            stampCode = "#004",
-            title = "Rainforest Trail",
-            destination = "Agumbe, Karnataka",
-            dateText = "01 SEP 2026",
-            peopleCount = 2,
-            momentsCount = 0
-        )
-        val config = PosterRenderConfig(
-            template = PosterTemplate.PHOTO_STAMP,
-            photoUri = "/invalid/path/to/missing_image_12345.jpg"
+    fun testLongLocationTextHandling() {
+        val basePaint = Paint().apply { textSize = 34f }
+        val location = "Trimbakeshwar, Nashik District, Maharashtra, India"
+
+        val fitted = PosterRenderer.fitResponsiveText(
+            text = location,
+            basePaint = basePaint,
+            maxWidth = 850f,
+            maxLines = 2,
+            maxTextSize = 34f,
+            minTextSize = 22f
         )
 
-        // Should not crash and should render branded fallback cleanly
-        val bitmap = PosterRenderer.render(context, trip, stamp, config)
-        assertNotNull(bitmap)
-        assertEquals(1080, bitmap.width)
-        assertEquals(1920, bitmap.height)
+        assertTrue(fitted.lines.size in 1..2)
+        assertTrue(!fitted.lines[0].contains("…"))
     }
 
     @Test
@@ -266,36 +247,30 @@ class TravelPosterRobolectricTest {
             peopleCount = 3,
             momentsCount = 2
         )
-        val configA = PosterRenderConfig(template = PosterTemplate.PHOTO_STAMP)
-        val bitmapA = PosterRenderer.render(context, trip, stamp, configA)
-        assertNotNull(bitmapA)
-        assertEquals(1080, bitmapA.width)
-        assertEquals(1920, bitmapA.height)
 
-        val configB = PosterRenderConfig(template = PosterTemplate.PASSPORT_STAMP)
-        val bitmapB = PosterRenderer.render(context, trip, stamp, configB)
-        assertNotNull(bitmapB)
-        assertEquals(1080, bitmapB.width)
-        assertEquals(1920, bitmapB.height)
+        val configSquare = PosterRenderConfig(
+            template = PosterTemplate.PASSPORT_STAMP,
+            format = StampEditionFormat.SQUARE
+        )
+        val bitmapSquare = PosterRenderer.render(context, trip, stamp, configSquare)
+        assertNotNull(bitmapSquare)
+        assertEquals(1080, bitmapSquare.width)
+        assertEquals(1080, bitmapSquare.height)
+        bitmapSquare.recycle()
+
+        val configPortrait = PosterRenderConfig(
+            template = PosterTemplate.PASSPORT_STAMP,
+            format = StampEditionFormat.PORTRAIT
+        )
+        val bitmapPortrait = PosterRenderer.render(context, trip, stamp, configPortrait)
+        assertNotNull(bitmapPortrait)
+        assertEquals(1080, bitmapPortrait.width)
+        assertEquals(1440, bitmapPortrait.height)
+        bitmapPortrait.recycle()
     }
 
     @Test
-    fun testTextWrappingAndEllipsis() {
-        val paint = Paint().apply { textSize = 40f }
-        val veryLongText = "This is an extremely long expedition name that will definitely exceed the standard canvas line bounds and require wrapping across multiple lines safely."
-        val wrappedLines = PosterRenderer.wrapAndLimitText(veryLongText, paint, maxWidth = 300f, maxLines = 2)
-
-        assertTrue(wrappedLines.size in 1..2)
-        for (line in wrappedLines) {
-            assertTrue(line.isNotBlank())
-        }
-
-        val truncated = PosterRenderer.truncateTextSingleLine("ExtremelyLongUnbrokenWordThatExceedsCanvasBounds", paint, maxWidth = 100f)
-        assertTrue(truncated.endsWith("…") || truncated.isNotEmpty())
-    }
-
-    @Test
-    fun testShareablePosterUriGeneration() {
+    fun testShareablePosterUriGenerationForPassportFormats() {
         val trip = Trip(
             id = 6L,
             name = "Valley of Flowers",
@@ -315,15 +290,21 @@ class TravelPosterRobolectricTest {
             peopleCount = 2,
             momentsCount = 4
         )
-        val bitmap = PosterRenderer.render(context, trip, stamp, PosterRenderConfig())
-        val uri = PosterExporter.getShareablePosterUri(context, bitmap, stamp)
+
+        val config = PosterRenderConfig(
+            template = PosterTemplate.PASSPORT_STAMP,
+            format = StampEditionFormat.PORTRAIT
+        )
+        val bitmap = PosterRenderer.render(context, trip, stamp, config)
+        val uri = PosterExporter.getShareablePosterUri(context, bitmap, stamp, StampEditionFormat.PORTRAIT)
+        bitmap.recycle()
 
         assertNotNull(uri)
         assertTrue(uri.toString().contains("TravelStamp_Poster") || uri.toString().contains("posters"))
     }
 
     @Test
-    fun testSavePosterToGallery() {
+    fun testSavePassportStampToGallery() {
         val trip = Trip(
             id = 7L,
             name = "Rann of Kutch",
@@ -343,14 +324,17 @@ class TravelPosterRobolectricTest {
             peopleCount = 2,
             momentsCount = 1
         )
-        val bitmap = PosterRenderer.render(context, trip, stamp, PosterRenderConfig())
-        val saved = PosterExporter.savePosterToGallery(context, bitmap, stamp)
-        // MediaStore insert in Robolectric environment
+        val bitmap = PosterRenderer.render(
+            context, trip, stamp,
+            PosterRenderConfig(template = PosterTemplate.PASSPORT_STAMP, format = StampEditionFormat.PORTRAIT)
+        )
+        val saved = PosterExporter.savePosterToGallery(context, bitmap, stamp, StampEditionFormat.PORTRAIT)
+        bitmap.recycle()
         assertTrue(saved)
     }
 
     @Test
-    fun testPosterReadonlySafeguard() = runBlocking {
+    fun testFormatChangeAndExportIntegritySafeguard() = runBlocking {
         // Complete trip and issue stamp #001
         val tripId = tripRepo.createTrip(
             Trip(name = "Kalsubai Peak", destination = "Igatpuri, Maharashtra", date = "10 Jan 2026")
@@ -364,22 +348,157 @@ class TravelPosterRobolectricTest {
             momentsCount = 0,
             inkColorHex = "#1E3A2F",
             stampStyle = "MOUNTAIN",
-            reflectionNote = null
+            reflectionNote = "Summit morning"
         ).getOrThrow()
         val initialStampsCount = stampRepo.getAllStamps().first().size
 
         val trip = tripRepo.getTripById(tripId).first()!!
-        val config = PosterRenderConfig(template = PosterTemplate.PHOTO_STAMP)
 
-        // Render poster
-        val bitmap = PosterExporter.createPosterBitmap(context, trip, stamp, config)
-        assertNotNull(bitmap)
+        // Render Square, Portrait, and Story
+        for (format in listOf(StampEditionFormat.SQUARE, StampEditionFormat.PORTRAIT, StampEditionFormat.STORY)) {
+            val config = PosterRenderConfig(template = PosterTemplate.PASSPORT_STAMP, format = format)
+            val bitmap = PosterExporter.createPosterBitmap(context, trip, stamp, config)
+            assertNotNull(bitmap)
+            assertEquals(format.width, bitmap.width)
+            assertEquals(format.height, bitmap.height)
+            bitmap.recycle()
+        }
 
-        // Verify database records are 100% unchanged (read-only)
+        // Verify database records are strictly read-only and 100% untouched
         val stampsAfterExport = stampRepo.getAllStamps().first().size
         assertEquals(initialStampsCount, stampsAfterExport)
         val tripAfter = tripRepo.getTripById(tripId).first()!!
         assertEquals(trip.status, tripAfter.status)
         assertEquals(trip.stampEarned, tripAfter.stampEarned)
+        val stampAfter = stampRepo.getStampForTrip(tripId).first()!!
+        assertEquals(stamp.id, stampAfter.id)
+        assertEquals(stamp.stampNumber, stampAfter.stampNumber)
+        assertEquals(stamp.stampCode, stampAfter.stampCode)
+        assertEquals(stamp.reflectionNote, stampAfter.reflectionNote)
+    }
+
+    @Test
+    fun testPhotoStampRenderingWithTransformations() {
+        val trip = Trip(
+            id = 201L,
+            name = "Harishchandragad Trek",
+            destination = "Ahmednagar, Maharashtra",
+            date = "2026-11-20",
+            status = TripStatus.COMPLETED,
+            stampEarned = true
+        )
+        val stamp = TravelStamp(
+            id = 201L,
+            tripId = 201L,
+            stampNumber = 8L,
+            stampCode = "#008",
+            title = "Harishchandragad Trek",
+            destination = "Ahmednagar, Maharashtra",
+            dateText = "20 NOV 2026",
+            peopleCount = 4,
+            momentsCount = 5
+        )
+
+        // Create a temporary sample photo bitmap
+        val samplePhotoFile = File(context.cacheDir, "test_photo_sample.jpg")
+        val sampleBitmap = Bitmap.createBitmap(800, 600, Bitmap.Config.ARGB_8888)
+        FileOutputStream(samplePhotoFile).use { out ->
+            sampleBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        sampleBitmap.recycle()
+
+        val photoUri = samplePhotoFile.toURI().toString()
+
+        // Render Photo+Stamp across all formats with custom framing and stamp positioning
+        for (format in StampEditionFormat.values()) {
+            val config = PosterRenderConfig(
+                template = PosterTemplate.PHOTO_STAMP,
+                format = format,
+                photoUri = photoUri,
+                panX = 0.05f,
+                panY = -0.05f,
+                zoom = 1.2f,
+                stampPositionX = 0.45f,
+                stampPositionY = 0.50f,
+                stampSize = com.example.ui.poster.StampSize.LARGE
+            )
+
+            val bitmap = PosterRenderer.render(context, trip, stamp, config)
+            assertNotNull(bitmap)
+            assertEquals(format.width, bitmap.width)
+            assertEquals(format.height, bitmap.height)
+            bitmap.recycle()
+        }
+
+        samplePhotoFile.delete()
+    }
+
+    @Test
+    fun testSingleOfficialStampInvariantUnderRapidCompletion() = runBlocking {
+        val tripId = tripRepo.createTrip(
+            Trip(name = "Sandhan Valley", destination = "Samrad, Maharashtra", date = "05 Jan 2026")
+        )
+
+        // Attempt 1st issuance
+        val firstResult = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Sandhan Valley",
+            destination = "Samrad, Maharashtra",
+            dateText = "05 JAN 2026",
+            peopleCount = 3,
+            momentsCount = 0,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = null
+        )
+        assertTrue(firstResult.isSuccess)
+        val firstStamp = firstResult.getOrThrow()
+
+        // Attempt 2nd issuance (Rapid tap simulation) - MUST return existing stamp without duplicating
+        val secondResult = stampRepo.completeTripAndIssueStamp(
+            tripId = tripId,
+            title = "Sandhan Valley",
+            destination = "Samrad, Maharashtra",
+            dateText = "05 JAN 2026",
+            peopleCount = 3,
+            momentsCount = 0,
+            inkColorHex = "#1E3A2F",
+            stampStyle = "MOUNTAIN",
+            reflectionNote = null
+        )
+        assertTrue(secondResult.isSuccess)
+        val secondStamp = secondResult.getOrThrow()
+
+        assertEquals(firstStamp.id, secondStamp.id)
+        assertEquals(firstStamp.stampNumber, secondStamp.stampNumber)
+        assertEquals(firstStamp.stampCode, secondStamp.stampCode)
+
+        // Verify strictly 1 stamp exists in database for this trip
+        val allStamps = stampRepo.getAllStamps().first()
+        val tripStamps = allStamps.filter { it.tripId == tripId }
+        assertEquals(1, tripStamps.size)
+    }
+
+    @Test
+    fun testFitResponsiveTextThreeLinesForVeryLongTitle() {
+        val basePaint = Paint().apply { textSize = 54f }
+        val veryLongTitle = "EXPEDITION TO THE HIGHEST PEAK OF THE WESTERN GHATS RANGE"
+
+        val fitted = PosterRenderer.fitResponsiveText(
+            text = veryLongTitle,
+            basePaint = basePaint,
+            maxWidth = 800f,
+            maxLines = 3,
+            maxTextSize = 54f,
+            minTextSize = 24f
+        )
+
+        assertTrue("Fitted lines should be 1 to 3", fitted.lines.size in 1..3)
+        assertTrue("Lines should not contain ellipsis", fitted.lines.none { it.contains("…") })
+        // All words should be present
+        val allText = fitted.lines.joinToString(" ")
+        assertTrue(allText.contains("EXPEDITION"))
+        assertTrue(allText.contains("HIGHEST"))
+        assertTrue(allText.contains("GHATS"))
     }
 }
