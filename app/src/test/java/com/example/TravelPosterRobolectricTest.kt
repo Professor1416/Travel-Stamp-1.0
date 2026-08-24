@@ -111,8 +111,8 @@ class TravelPosterRobolectricTest {
         assertEquals(1f, StampEditionFormat.SQUARE.aspectRatio, 0.001f)
 
         assertEquals(1080, StampEditionFormat.PORTRAIT.width)
-        assertEquals(1440, StampEditionFormat.PORTRAIT.height)
-        assertEquals(0.75f, StampEditionFormat.PORTRAIT.aspectRatio, 0.001f)
+        assertEquals(1350, StampEditionFormat.PORTRAIT.height)
+        assertEquals(0.8f, StampEditionFormat.PORTRAIT.aspectRatio, 0.001f)
 
         assertEquals(1080, StampEditionFormat.STORY.width)
         assertEquals(1920, StampEditionFormat.STORY.height)
@@ -155,7 +155,7 @@ class TravelPosterRobolectricTest {
         assertEquals(1080, squareBitmap.height)
         squareBitmap.recycle()
 
-        // 2. Portrait (1080x1440)
+        // 2. Portrait (1080x1350, 4:5)
         val portraitConfig = PosterRenderConfig(
             template = PosterTemplate.PASSPORT_STAMP,
             format = StampEditionFormat.PORTRAIT
@@ -164,7 +164,7 @@ class TravelPosterRobolectricTest {
         assertTrue(portraitResult is PosterRenderResult.Success)
         val portraitBitmap = (portraitResult as PosterRenderResult.Success).bitmap
         assertEquals(1080, portraitBitmap.width)
-        assertEquals(1440, portraitBitmap.height)
+        assertEquals(1350, portraitBitmap.height)
         portraitBitmap.recycle()
 
         // 3. Story (1080x1920)
@@ -279,7 +279,7 @@ class TravelPosterRobolectricTest {
         assertTrue(portraitResult is PosterRenderResult.Success)
         val bitmapPortrait = (portraitResult as PosterRenderResult.Success).bitmap
         assertEquals(1080, bitmapPortrait.width)
-        assertEquals(1440, bitmapPortrait.height)
+        assertEquals(1350, bitmapPortrait.height)
         bitmapPortrait.recycle()
     }
 

@@ -3,9 +3,12 @@ package com.example.ui.util
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ColorSpace
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import android.os.Build
+import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
 import java.io.BufferedInputStream
 import java.io.File
@@ -17,16 +20,34 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.max
 
+/**
+ * Robust, production-grade image preparation and media utility pipeline for Travel Stamp.
+ * Handles diverse Android gallery providers, cloud content URIs, large camera photos (12MP–108MP),
+ * iPhone HEIC/HEIF/PNG sources, EXIF orientation, and memory-safe downsampling.
+ */
 object PhotoUtils {
 
-    const val MAX_SOURCE_FILE_SIZE_BYTES = 50 * 1024 * 1024L // 50 MB
+    const val MAX_SOURCE_FILE_SIZE_BYTES = 50 * 1024 * 1024L // 50 MB hard safety limit
     const val MAX_WORKING_DIMENSION = 2560 // Max 2560px for high-res 1080x1920 exports
     const val WORKING_JPEG_QUALITY = 86
 
     sealed interface WorkingImageResult {
         data class Success(val filePath: String, val width: Int, val height: Int) : WorkingImageResult
         data class TooLarge(val maxAllowedMb: Int) : WorkingImageResult
-        data class Error(val message: String) : WorkingImageResult
+        data class UnsupportedFormat(val message: String) : WorkingImageResult
+        data class Error(val code: ErrorCode, val message: String) : WorkingImageResult
+    }
+
+    enum class ErrorCode {
+        URI_OPEN_FAILED,
+        STREAM_READ_FAILED,
+        FILE_TOO_LARGE,
+        BOUNDS_DECODE_FAILED,
+        UNSUPPORTED_FORMAT,
+        BITMAP_DECODE_FAILED,
+        OUT_OF_MEMORY,
+        WRITE_FAILED,
+        UNKNOWN
     }
 
     /**
@@ -36,108 +57,149 @@ object PhotoUtils {
     fun calculateInSampleSize(outWidth: Int, outHeight: Int, maxDimension: Int = MAX_WORKING_DIMENSION): Int {
         var inSampleSize = 1
         val maxSrcDim = max(outWidth, outHeight)
-        while ((maxSrcDim / (inSampleSize * 2)) >= maxDimension) {
+        val maxTarget = maxDimension.coerceAtLeast(1)
+        while ((maxSrcDim / inSampleSize) > maxTarget) {
             inSampleSize *= 2
         }
-        return inSampleSize
+        return inSampleSize.coerceAtLeast(1)
     }
 
     /**
      * Prepares a single canonical, app-controlled optimized working image for the Photo + Stamp editor.
-     * 1. Safely checks source size (rejects >50MB).
-     * 2. Reads bounds first without decoding full image.
-     * 3. Calculates optimal inSampleSize.
-     * 4. Normalizes EXIF rotation (0°, 90°, 180°, 270°, flips).
-     * 5. Scales to optimal working dimensions (<=2560px).
-     * 6. Writes high-quality JPEG to app cache (cacheDir/photo_editor/).
-     * 7. Validates working file exists and is decodable before returning.
+     * 1. Safely streams source (respects cloud content:// URIs and single-use provider grants).
+     * 2. Rejects files > 50MB during stream reading.
+     * 3. Reads bounds first without allocating full bitmap.
+     * 4. Calculates optimal power-of-2 inSampleSize.
+     * 5. Normalizes EXIF rotation (0°, 90°, 180°, 270°, flips).
+     * 6. Normalizes color space to standard sRGB on supported devices.
+     * 7. Scales to optimal working dimensions (<=2560px).
+     * 8. Writes high-quality JPEG to app cache (cacheDir/photo_editor/).
+     * 9. Cleans up temporary scratch input files.
+     * 10. Validates working file exists and is decodable before returning.
      */
     fun prepareWorkingImage(context: Context, sourceUri: Uri): WorkingImageResult {
+        var scratchFile: File? = null
         return try {
-            // 1. Check source size limit (50 MB)
-            val sourceSizeBytes = getSourceSizeBytes(context, sourceUri)
-            if (sourceSizeBytes != null && sourceSizeBytes > MAX_SOURCE_FILE_SIZE_BYTES) {
-                return WorkingImageResult.TooLarge(50)
-            }
-
             val uriString = sourceUri.toString()
-            val directFile: File? = when {
-                uriString.startsWith("/") -> File(uriString)
-                sourceUri.scheme == "file" || sourceUri.scheme == null -> {
-                    val path = sourceUri.path ?: uriString.removePrefix("file://").removePrefix("file:")
-                    File(path)
-                }
-                else -> null
-            }
+            val isDirectFile = uriString.startsWith("/") || sourceUri.scheme == "file" || sourceUri.scheme == null
 
-            val (outWidth, outHeight, orientation, rawBitmap) = if (directFile != null && directFile.exists() && directFile.canRead()) {
-                val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(directFile.absolutePath, boundsOptions)
-                if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) {
-                    return WorkingImageResult.Error("Invalid or corrupted image dimensions.")
+            val sourceFile: File = if (isDirectFile) {
+                val path = if (uriString.startsWith("/")) uriString else (sourceUri.path ?: uriString.removePrefix("file://").removePrefix("file:"))
+                val f = File(path)
+                if (!f.exists() || !f.canRead()) {
+                    return WorkingImageResult.Error(ErrorCode.URI_OPEN_FAILED, "Source file cannot be read.")
                 }
-
-                val sampleSize = calculateInSampleSize(boundsOptions.outWidth, boundsOptions.outHeight, MAX_WORKING_DIMENSION)
-                val exifOrientation = try {
-                    ExifInterface(directFile.absolutePath).getAttributeInt(
-                        ExifInterface.TAG_ORIENTATION,
-                        ExifInterface.ORIENTATION_NORMAL
-                    )
-                } catch (_: Exception) {
-                    ExifInterface.ORIENTATION_NORMAL
+                if (f.length() > MAX_SOURCE_FILE_SIZE_BYTES) {
+                    return WorkingImageResult.TooLarge(50)
                 }
-
-                val decodeOptions = BitmapFactory.Options().apply {
-                    inSampleSize = sampleSize
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                }
-                val bitmap = BitmapFactory.decodeFile(directFile.absolutePath, decodeOptions)
-                    ?: return WorkingImageResult.Error("Failed to decode image data.")
-
-                listOf(boundsOptions.outWidth, boundsOptions.outHeight, exifOrientation, bitmap)
+                f
             } else {
-                val openInput: () -> InputStream? = {
-                    context.contentResolver.openInputStream(sourceUri)?.let { BufferedInputStream(it) }
+                // For content:// URIs (e.g. Google Photos, MediaStore, WhatsApp, Downloads),
+                // stream safely into a temporary scratch file once to ensure random seekability and persistence.
+                val scratchDir = File(context.cacheDir, "scratch_picker")
+                if (!scratchDir.exists()) {
+                    scratchDir.mkdirs()
+                }
+                val tempScratch = File(scratchDir, "picker_in_${System.currentTimeMillis()}.tmp")
+                scratchFile = tempScratch
+
+                val inputStream = try {
+                    context.contentResolver.openInputStream(sourceUri)
+                } catch (e: SecurityException) {
+                    return WorkingImageResult.Error(ErrorCode.URI_OPEN_FAILED, "Permission denied opening image.")
+                } catch (e: Exception) {
+                    return WorkingImageResult.Error(ErrorCode.URI_OPEN_FAILED, "Cannot open image stream.")
+                } ?: return WorkingImageResult.Error(ErrorCode.URI_OPEN_FAILED, "Cannot open image stream.")
+
+                var totalBytes = 0L
+                val buffer = ByteArray(64 * 1024)
+                FileOutputStream(tempScratch).use { out ->
+                    inputStream.use { input ->
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            totalBytes += read
+                            if (totalBytes > MAX_SOURCE_FILE_SIZE_BYTES) {
+                                tempScratch.delete()
+                                return WorkingImageResult.TooLarge(50)
+                            }
+                            out.write(buffer, 0, read)
+                        }
+                    }
                 }
 
-                val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                openInput()?.use { input ->
-                    BitmapFactory.decodeStream(input, null, boundsOptions)
-                } ?: return WorkingImageResult.Error("Cannot read source image stream.")
-
-                if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) {
-                    return WorkingImageResult.Error("Invalid or corrupted image dimensions.")
+                if (!tempScratch.exists() || tempScratch.length() <= 0L) {
+                    tempScratch.delete()
+                    return WorkingImageResult.Error(ErrorCode.STREAM_READ_FAILED, "Received empty image from provider.")
                 }
-
-                val sampleSize = calculateInSampleSize(boundsOptions.outWidth, boundsOptions.outHeight, MAX_WORKING_DIMENSION)
-                val exifOrientation = try {
-                    openInput()?.use { stream ->
-                        ExifInterface(stream).getAttributeInt(
-                            ExifInterface.TAG_ORIENTATION,
-                            ExifInterface.ORIENTATION_NORMAL
-                        )
-                    } ?: ExifInterface.ORIENTATION_NORMAL
-                } catch (_: Exception) {
-                    ExifInterface.ORIENTATION_NORMAL
-                }
-
-                val decodeOptions = BitmapFactory.Options().apply {
-                    inSampleSize = sampleSize
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                }
-                val bitmap = openInput()?.use { input ->
-                    BitmapFactory.decodeStream(input, null, decodeOptions)
-                } ?: return WorkingImageResult.Error("Failed to decode image data.")
-
-                listOf(boundsOptions.outWidth, boundsOptions.outHeight, exifOrientation, bitmap)
-            }.let { list ->
-                @Suppress("UNCHECKED_CAST")
-                DecodeResult(list[0] as Int, list[1] as Int, list[2] as Int, list[3] as Bitmap)
+                tempScratch
             }
 
-            // 6. Bake in orientation matrix
+            // 1. Inspect bounds
+            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(sourceFile.absolutePath, boundsOptions)
+
+            if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) {
+                // Check if it's an unsupported format (e.g. unsupported HEIC/HEIF or RAW)
+                val mimeType = try {
+                    if (sourceUri.scheme == "content") context.contentResolver.getType(sourceUri) else null
+                } catch (_: Exception) { null }
+                val isHeic = mimeType?.contains("heic", ignoreCase = true) == true ||
+                        mimeType?.contains("heif", ignoreCase = true) == true ||
+                        sourceUri.toString().endsWith(".heic", ignoreCase = true) ||
+                        sourceUri.toString().endsWith(".heif", ignoreCase = true)
+
+                scratchFile?.delete()
+                return if (isHeic) {
+                    WorkingImageResult.UnsupportedFormat("This photo format isn’t supported on this device. Try using a JPG version.")
+                } else {
+                    WorkingImageResult.Error(ErrorCode.BOUNDS_DECODE_FAILED, "Invalid or corrupted image format.")
+                }
+            }
+
+            val sampleSize = calculateInSampleSize(boundsOptions.outWidth, boundsOptions.outHeight, MAX_WORKING_DIMENSION)
+
+            // 2. Read EXIF Orientation safely
+            val exifOrientation = try {
+                ExifInterface(sourceFile.absolutePath).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            } catch (_: Exception) {
+                ExifInterface.ORIENTATION_NORMAL
+            }
+
+            // 3. Decode bitmap with memory-safe inSampleSize and sRGB color normalization
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB)
+                }
+            }
+
+            var rawBitmap = try {
+                BitmapFactory.decodeFile(sourceFile.absolutePath, decodeOptions)
+            } catch (e: OutOfMemoryError) {
+                // Fallback to RGB_565 on extreme memory pressure
+                try {
+                    val fallbackOptions = BitmapFactory.Options().apply {
+                        inSampleSize = sampleSize * 2
+                        inPreferredConfig = Bitmap.Config.RGB_565
+                    }
+                    BitmapFactory.decodeFile(sourceFile.absolutePath, fallbackOptions)
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+
+            if (rawBitmap == null) {
+                scratchFile?.delete()
+                return WorkingImageResult.Error(ErrorCode.BITMAP_DECODE_FAILED, "Failed to decode photo.")
+            }
+
+            // 4. Apply EXIF orientation
             val matrix = Matrix()
-            when (orientation) {
+            when (exifOrientation) {
                 ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
                 ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
                 ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
@@ -146,7 +208,11 @@ object PhotoUtils {
             }
 
             val orientedBitmap = if (!matrix.isIdentity) {
-                val rotated = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+                val rotated = try {
+                    Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+                } catch (e: OutOfMemoryError) {
+                    rawBitmap
+                }
                 if (rotated != rawBitmap) {
                     rawBitmap.recycle()
                 }
@@ -155,13 +221,17 @@ object PhotoUtils {
                 rawBitmap
             }
 
-            // 7. Scale down if longest dimension still exceeds max
+            // 5. Downscale if longest dimension still exceeds max
             val longestDim = max(orientedBitmap.width, orientedBitmap.height)
             val finalBitmap = if (longestDim > MAX_WORKING_DIMENSION) {
                 val scale = MAX_WORKING_DIMENSION.toFloat() / longestDim
                 val targetW = (orientedBitmap.width * scale).toInt().coerceAtLeast(1)
                 val targetH = (orientedBitmap.height * scale).toInt().coerceAtLeast(1)
-                val scaled = Bitmap.createScaledBitmap(orientedBitmap, targetW, targetH, true)
+                val scaled = try {
+                    Bitmap.createScaledBitmap(orientedBitmap, targetW, targetH, true)
+                } catch (e: OutOfMemoryError) {
+                    orientedBitmap
+                }
                 if (scaled != orientedBitmap) {
                     orientedBitmap.recycle()
                 }
@@ -170,7 +240,7 @@ object PhotoUtils {
                 orientedBitmap
             }
 
-            // 8. Save into app cache photo_editor directory
+            // 6. Write normalized working image to cacheDir/photo_editor/
             val editorDir = File(context.cacheDir, "photo_editor")
             if (!editorDir.exists()) {
                 editorDir.mkdirs()
@@ -186,31 +256,20 @@ object PhotoUtils {
             val finalHeight = finalBitmap.height
             finalBitmap.recycle()
 
+            // 7. Cleanup scratch file immediately
+            scratchFile?.delete()
+
             if (!workingFile.exists() || workingFile.length() <= 0L) {
-                return WorkingImageResult.Error("Failed to write working image copy.")
+                return WorkingImageResult.Error(ErrorCode.WRITE_FAILED, "Failed to write working image copy.")
             }
 
             WorkingImageResult.Success(workingFile.absolutePath, finalWidth, finalHeight)
         } catch (e: OutOfMemoryError) {
-            WorkingImageResult.Error("Image too large for device memory. Please choose a smaller photo.")
+            scratchFile?.delete()
+            WorkingImageResult.Error(ErrorCode.OUT_OF_MEMORY, "Image too large for device memory. Please choose a smaller photo.")
         } catch (e: Exception) {
-            WorkingImageResult.Error(e.message ?: "Failed to process photo.")
-        }
-    }
-
-    private fun getSourceSizeBytes(context: Context, uri: Uri): Long? {
-        return try {
-            if (uri.scheme == "file" || uri.scheme == null) {
-                val path = uri.path ?: uri.toString()
-                val f = File(path)
-                if (f.exists()) f.length() else null
-            } else {
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use {
-                    it.length
-                }
-            }
-        } catch (_: Exception) {
-            null
+            scratchFile?.delete()
+            WorkingImageResult.Error(ErrorCode.UNKNOWN, e.message ?: "Failed to process photo.")
         }
     }
 
@@ -371,11 +430,4 @@ object PhotoUtils {
             // Non-fatal fail-safe
         }
     }
-
-    private data class DecodeResult(
-        val width: Int,
-        val height: Int,
-        val orientation: Int,
-        val bitmap: Bitmap
-    )
 }

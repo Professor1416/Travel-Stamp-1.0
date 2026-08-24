@@ -23,10 +23,10 @@ enum class StampEditionFormat(
     PORTRAIT(
         id = "PORTRAIT",
         title = "Portrait",
-        description = "Classic portrait format",
+        description = "Classic portrait format (4:5)",
         width = 1080,
-        height = 1440,
-        aspectRatio = 3f / 4f
+        height = 1350,
+        aspectRatio = 4f / 5f
     ),
     STORY(
         id = "STORY",

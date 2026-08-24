@@ -29,7 +29,7 @@ import kotlin.math.sin
 
 /**
  * High-performance, memory-safe bitmap renderer for Travel Stamp editions across
- * Square (1080x1080), Portrait (1080x1440), and Story (1080x1920) formats.
+ * Square (1080x1080), Portrait (1080x1350, 4:5), and Story (1080x1920) formats.
  * Pure presentation logic: strictly read-only, never alters Trip, Stamp, or database records.
  */
 sealed interface PosterRenderResult {
@@ -418,31 +418,32 @@ object PosterRenderer {
         } catch (_: Exception) {}
 
         // 2. Gradient Overlays for High Legibility & Contrast
-        drawTemplateAGradients(canvas, width, height)
+        drawTemplateAGradients(canvas, width, height, config.format)
 
         // 3. Top Header Branding
         val topHeaderPaint = Paint().apply {
             isAntiAlias = true
             color = AndroidColor.WHITE
             alpha = 210
-            textSize = 28f
+            textSize = width * 0.026f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
             letterSpacing = 0.22f
         }
-        canvas.drawText("TRAVEL STAMP • EXPEDITION POSTER", width / 2f, 120f, topHeaderPaint)
+        val headerY = height * PhotoStampLayout.TOP_HEADER_Y_RATIO
+        canvas.drawText("TRAVEL STAMP • EXPEDITION POSTER", width / 2f, headerY, topHeaderPaint)
 
-        // 4. Overlaid Travel Stamp Seal (Respects user drag position and discrete StampSize)
-        val baseStampRadius = min(width * 0.22f, height * 0.155f)
-        val stampRadius = baseStampRadius * config.stampSize.scale
+        // 4. Overlaid Travel Stamp Seal (Derived from single canonical PhotoStampLayout)
+        val stampRadius = PhotoStampLayout.getStampRadiusPx(width, config.stampSize)
+        val (clampedNormX, clampedNormY) = PhotoStampLayout.clampStampPosition(
+            config.stampPositionX,
+            config.stampPositionY,
+            config.format,
+            config.stampSize
+        )
 
-        val minX = stampRadius + 36f
-        val maxX = width - stampRadius - 36f
-        val minY = stampRadius + 140f
-        val maxY = height - stampRadius - 260f
-
-        val stampCenterX = (config.stampPositionX * width).coerceIn(minX, maxX)
-        val stampCenterY = (config.stampPositionY * height).coerceIn(minY, maxY)
+        val stampCenterX = clampedNormX * width
+        val stampCenterY = clampedNormY * height
 
         // Soft backdrop badge circle for stamp visibility on diverse photos
         val badgePaint = Paint().apply {
@@ -473,8 +474,8 @@ object PosterRenderer {
             stamp = stamp
         )
 
-        // 5. Bottom Metadata Typography
-        drawTemplateAFooter(canvas, width, height, stamp, trip)
+        // 5. Bottom Metadata Typography (WYSIWYG layout derived from PhotoStampLayout)
+        drawTemplateAFooter(canvas, width, height, stamp, trip, config.format)
 
         return PosterRenderResult.Success(bitmap)
     }
@@ -484,9 +485,10 @@ object PosterRenderer {
         width: Float,
         height: Float,
         stamp: TravelStamp,
-        trip: Trip
+        trip: Trip,
+        format: StampEditionFormat
     ) {
-        val contentStartY = height * 0.70f
+        val contentStartY = height * PhotoStampLayout.getFooterStartYRatio(format)
         val maxTextWidth = width - 180f
 
         val baseTitlePaint = Paint().apply {
@@ -500,8 +502,8 @@ object PosterRenderer {
             basePaint = baseTitlePaint,
             maxWidth = maxTextWidth,
             maxLines = 2,
-            maxTextSize = 54f,
-            minTextSize = 34f
+            maxTextSize = width * 0.050f,
+            minTextSize = width * 0.032f
         )
         var currentY = contentStartY
         for (line in titleLayout.lines) {
@@ -526,8 +528,8 @@ object PosterRenderer {
             basePaint = baseDestPaint,
             maxWidth = maxTextWidth,
             maxLines = 2,
-            maxTextSize = 34f,
-            minTextSize = 22f
+            maxTextSize = width * 0.032f,
+            minTextSize = width * 0.020f
         )
         for (line in destLayout.lines) {
             canvas.drawText(line, width / 2f, currentY, destLayout.paint)
@@ -554,7 +556,7 @@ object PosterRenderer {
         val pillTextPaint = Paint().apply {
             isAntiAlias = true
             color = AndroidColor.WHITE
-            textSize = 26f
+            textSize = width * 0.024f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
             letterSpacing = 0.06f
@@ -576,7 +578,7 @@ object PosterRenderer {
             isAntiAlias = true
             color = AndroidColor.WHITE
             alpha = 150
-            textSize = 22f
+            textSize = width * 0.020f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
             textAlign = Paint.Align.CENTER
             letterSpacing = 0.16f
@@ -584,9 +586,9 @@ object PosterRenderer {
         canvas.drawText("TRAVEL STAMP 🏔️ • OFFICIAL DIGITAL PASSPORT", width / 2f, height - 70f, footerPaint)
     }
 
-    private fun drawTemplateAGradients(canvas: Canvas, width: Float, height: Float) {
+    private fun drawTemplateAGradients(canvas: Canvas, width: Float, height: Float, format: StampEditionFormat) {
         val topShader = LinearGradient(
-            0f, 0f, 0f, 280f,
+            0f, 0f, 0f, height * 0.15f,
             intArrayOf(AndroidColor.argb(190, 0, 0, 0), AndroidColor.TRANSPARENT),
             null,
             Shader.TileMode.CLAMP
@@ -595,10 +597,11 @@ object PosterRenderer {
             isAntiAlias = true
             shader = topShader
         }
-        canvas.drawRect(0f, 0f, width, 280f, topPaint)
+        canvas.drawRect(0f, 0f, width, height * 0.15f, topPaint)
 
+        val bottomGradientStartY = height * (PhotoStampLayout.getFooterStartYRatio(format) - 0.22f)
         val bottomShader = LinearGradient(
-            0f, height * 0.48f, 0f, height,
+            0f, bottomGradientStartY, 0f, height,
             intArrayOf(
                 AndroidColor.TRANSPARENT,
                 AndroidColor.argb(160, 10, 16, 14),
@@ -611,7 +614,7 @@ object PosterRenderer {
             isAntiAlias = true
             shader = bottomShader
         }
-        canvas.drawRect(0f, height * 0.48f, width, height, bottomPaint)
+        canvas.drawRect(0f, bottomGradientStartY, width, height, bottomPaint)
     }
 
     // ==========================================
@@ -995,27 +998,17 @@ object PosterRenderer {
         panY: Float,
         zoom: Float
     ) {
-        val srcWidth = bitmap.width.toFloat()
-        val srcHeight = bitmap.height.toFloat()
-        val clampedZoom = zoom.coerceIn(1.0f, 3.5f)
+        val geom = PhotoStampLayout.calculatePhotoTransform(
+            srcWidth = bitmap.width.toFloat(),
+            srcHeight = bitmap.height.toFloat(),
+            targetWidth = targetWidth,
+            targetHeight = targetHeight,
+            panX = panX,
+            panY = panY,
+            zoom = zoom
+        )
 
-        val scaleX = targetWidth / srcWidth
-        val scaleY = targetHeight / srcHeight
-        val baseScale = max(scaleX, scaleY)
-        val finalScale = baseScale * clampedZoom
-
-        val scaledW = srcWidth * finalScale
-        val scaledH = srcHeight * finalScale
-
-        val maxPanX = max(0f, (scaledW - targetWidth) / 2f)
-        val maxPanY = max(0f, (scaledH - targetHeight) / 2f)
-        val clampedPanX = (panX * targetWidth).coerceIn(-maxPanX, maxPanX)
-        val clampedPanY = (panY * targetHeight).coerceIn(-maxPanY, maxPanY)
-
-        val tx = (targetWidth - scaledW) / 2f + clampedPanX
-        val ty = (targetHeight - scaledH) / 2f + clampedPanY
-
-        val dstRect = RectF(tx, ty, tx + scaledW, ty + scaledH)
+        val dstRect = RectF(geom.left, geom.top, geom.right, geom.bottom)
         val paint = Paint().apply {
             isAntiAlias = true
             isFilterBitmap = true

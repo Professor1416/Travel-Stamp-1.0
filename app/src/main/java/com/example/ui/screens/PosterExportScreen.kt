@@ -99,6 +99,7 @@ import com.example.ui.components.TravelOutlinedButton
 import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.components.TravelStampView
 import com.example.ui.components.parseInkColor
+import com.example.ui.poster.PhotoStampLayout
 import com.example.ui.poster.PosterExporter
 import com.example.ui.poster.PosterRenderConfig
 import com.example.ui.poster.PosterRenderResult
@@ -260,6 +261,9 @@ fun PosterExportScreen(
                     }
                     is PhotoUtils.WorkingImageResult.TooLarge -> {
                         snackbarHostState.showSnackbar("This photo is too large. Choose another image.")
+                    }
+                    is PhotoUtils.WorkingImageResult.UnsupportedFormat -> {
+                        snackbarHostState.showSnackbar(result.message)
                     }
                     is PhotoUtils.WorkingImageResult.Error -> {
                         snackbarHostState.showSnackbar("Couldn’t prepare this photo. Choose another image.")
@@ -443,12 +447,14 @@ fun PosterExportScreen(
                         },
                         onStampDrag = { dNormX, dNormY ->
                             if (selectedTemplate == PosterTemplate.PHOTO_STAMP) {
-                                val minX = 0.22f
-                                val maxX = 0.78f
-                                val minY = 0.22f
-                                val maxY = 0.70f
-                                stampNormX = (stampNormX + dNormX).coerceIn(minX, maxX)
-                                stampNormY = (stampNormY + dNormY).coerceIn(minY, maxY)
+                                val (newX, newY) = PhotoStampLayout.clampStampPosition(
+                                    stampNormX + dNormX,
+                                    stampNormY + dNormY,
+                                    selectedFormat,
+                                    selectedStampSize
+                                )
+                                stampNormX = newX
+                                stampNormY = newY
                             }
                         },
                         onSelectFromGallery = {
@@ -553,8 +559,14 @@ fun PosterExportScreen(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clickable {
-                                                stampNormX = 0.5f
-                                                stampNormY = 0.44f
+                                                val (defX, defY) = PhotoStampLayout.clampStampPosition(
+                                                    0.5f,
+                                                    0.44f,
+                                                    selectedFormat,
+                                                    StampSize.MEDIUM
+                                                )
+                                                stampNormX = defX
+                                                stampNormY = defY
                                                 selectedStampSize = StampSize.MEDIUM
                                             }
                                             .testTag("reset_stamp_button")
@@ -776,6 +788,9 @@ fun PosterExportScreen(
                                                             }
                                                             is PhotoUtils.WorkingImageResult.TooLarge -> {
                                                                 snackbarHostState.showSnackbar("This photo is too large. Choose another image.")
+                                                            }
+                                                            is PhotoUtils.WorkingImageResult.UnsupportedFormat -> {
+                                                                snackbarHostState.showSnackbar(result.message)
                                                             }
                                                             is PhotoUtils.WorkingImageResult.Error -> {
                                                                 snackbarHostState.showSnackbar("Couldn’t open this journey photo. Choose another image.")
@@ -1106,9 +1121,9 @@ private fun ResponsivePosterLivePreview(
                             Brush.verticalGradient(
                                 colorStops = arrayOf(
                                     0.0f to Color.Black.copy(alpha = 0.55f),
-                                    0.16f to Color.Transparent,
-                                    0.55f to Color.Transparent,
-                                    0.75f to Color(0xFF0A100E).copy(alpha = 0.75f),
+                                    0.15f to Color.Transparent,
+                                    (PhotoStampLayout.getFooterStartYRatio(format) - 0.22f).coerceAtLeast(0.40f) to Color.Transparent,
+                                    (PhotoStampLayout.getFooterStartYRatio(format) - 0.05f) to Color(0xFF0A100E).copy(alpha = 0.75f),
                                     1.0f to Color(0xFF0A100E).copy(alpha = 0.95f)
                                 )
                             )
@@ -1130,18 +1145,23 @@ private fun ResponsivePosterLivePreview(
 
                 // Draggable Stamp Seal Overlay (Active when photo is selected)
                 if (!photoUri.isNullOrBlank()) {
-                    val baseStampDp = previewWidth * 0.44f
-                    val stampSizeDp = baseStampDp * stampSize.scale
-                    val stampRadiusPx = with(LocalDensity.current) { (stampSizeDp / 2f).toPx() }
+                    val stampRadiusPx = PhotoStampLayout.getStampRadiusPx(widthPx, stampSize)
+                    val (clampedNormX, clampedNormY) = PhotoStampLayout.clampStampPosition(
+                        stampNormX,
+                        stampNormY,
+                        format,
+                        stampSize
+                    )
 
-                    val posX = (stampNormX * widthPx) - stampRadiusPx
-                    val posY = (stampNormY * heightPx) - stampRadiusPx
+                    val posX = (clampedNormX * widthPx) - stampRadiusPx
+                    val posY = (clampedNormY * heightPx) - stampRadiusPx
+                    val stampDiameterDp = with(LocalDensity.current) { (stampRadiusPx * 2f).toDp() }
 
                     Box(
                         modifier = Modifier
                             .offset { IntOffset(posX.roundToInt(), posY.roundToInt()) }
-                            .size(stampSizeDp)
-                            .pointerInput(stampSize) {
+                            .size(stampDiameterDp)
+                            .pointerInput(stampSize, format) {
                                 detectDragGestures { change, dragAmount ->
                                     change.consume()
                                     val dNormX = dragAmount.x / widthPx
@@ -1162,19 +1182,20 @@ private fun ResponsivePosterLivePreview(
 
                         TravelStampView(
                             stamp = stamp,
-                            size = stampSizeDp * 0.92f,
+                            size = stampDiameterDp * 0.92f,
                             rotation = 0f
                         )
                     }
                 }
 
                 // Bottom Metadata Typography Overlay
+                val footerStartYPx = heightPx * PhotoStampLayout.getFooterStartYRatio(format)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .offset { IntOffset(0, (footerStartYPx - with(density) { 6.dp.toPx() }).roundToInt()) }
+                        .padding(horizontal = 14.dp)
                 ) {
                     Text(
                         text = stamp.title,
