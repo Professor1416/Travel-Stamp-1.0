@@ -11,11 +11,13 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.media.ExifInterface
 import android.net.Uri
+import com.example.R
 import com.example.data.model.TravelStamp
 import com.example.data.model.Trip
 import java.io.BufferedInputStream
@@ -433,7 +435,7 @@ object PosterRenderer {
         val headerY = height * PhotoStampLayout.TOP_HEADER_Y_RATIO
         canvas.drawText("TRAVEL STAMP • EXPEDITION POSTER", width / 2f, headerY, topHeaderPaint)
 
-        // 4. Overlaid Travel Stamp Seal (Derived from single canonical PhotoStampLayout)
+        // 4. Overlaid Travel Stamp Collectible Badge (Derived from single canonical PhotoStampLayout)
         val stampRadius = PhotoStampLayout.getStampRadiusPx(width, config.stampSize)
         val (clampedNormX, clampedNormY) = PhotoStampLayout.clampStampPosition(
             config.stampPositionX,
@@ -444,32 +446,14 @@ object PosterRenderer {
 
         val stampCenterX = clampedNormX * width
         val stampCenterY = clampedNormY * height
-
-        // Soft backdrop badge circle for stamp visibility on diverse photos
-        val badgePaint = Paint().apply {
-            isAntiAlias = true
-            color = AndroidColor.parseColor("#F5EBE1")
-            alpha = 245
-            style = Paint.Style.FILL
-            setShadowLayer(30f, 0f, 10f, AndroidColor.argb(120, 0, 0, 0))
-        }
-        canvas.drawCircle(stampCenterX, stampCenterY, stampRadius + 20f, badgePaint)
-
-        val badgeBorderPaint = Paint().apply {
-            isAntiAlias = true
-            color = AndroidColor.parseColor("#B07D46")
-            alpha = 180
-            style = Paint.Style.STROKE
-            strokeWidth = 3f
-        }
-        canvas.drawCircle(stampCenterX, stampCenterY, stampRadius + 16f, badgeBorderPaint)
-
         val inkColorInt = parseColor(stamp.inkColorHex, AndroidColor.parseColor("#1E3A2F"))
-        drawSealToCanvas(
+
+        drawPhotoStampBadgeToCanvas(
+            context = context,
             canvas = canvas,
             centerX = stampCenterX,
             centerY = stampCenterY,
-            radius = stampRadius,
+            diameter = stampRadius * 2f,
             inkColor = inkColorInt,
             stamp = stamp
         )
@@ -505,7 +489,9 @@ object PosterRenderer {
             maxTextSize = width * 0.050f,
             minTextSize = width * 0.032f
         )
-        var currentY = contentStartY
+        // In Android Canvas drawText, y is baseline. To align the top of the title text block
+        // strictly at contentStartY, the first baseline is contentStartY - ascent (ascent is negative).
+        var currentY = contentStartY - titleLayout.paint.ascent()
         for (line in titleLayout.lines) {
             canvas.drawText(line, width / 2f, currentY, titleLayout.paint)
             currentY += titleLayout.lineHeight
@@ -664,6 +650,110 @@ object PosterRenderer {
         }
         canvas.drawLine(centerX, 200f, centerX, height - 300f, crossPaint)
         canvas.drawLine(100f, centerY, width - 100f, centerY, crossPaint)
+    }
+
+    // ==========================================
+    // PHOTO STAMP COLLECTIBLE BADGE DRAWING
+    // ==========================================
+    private var cachedSymbolLogo: Bitmap? = null
+
+    private fun getSymbolLogoBitmap(context: Context): Bitmap? {
+        val current = cachedSymbolLogo
+        if (current != null && !current.isRecycled) {
+            return current
+        }
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val decoded = BitmapFactory.decodeResource(context.resources, R.drawable.travel_stamp_symbol, options)
+            cachedSymbolLogo = decoded
+            decoded
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    private fun drawPhotoStampBadgeToCanvas(
+        context: Context,
+        canvas: Canvas,
+        centerX: Float,
+        centerY: Float,
+        diameter: Float,
+        inkColor: Int,
+        stamp: TravelStamp
+    ) {
+        val radius = diameter / 2f
+
+        // 1. Soft backdrop badge circle for stamp visibility on diverse photos
+        val badgePaint = Paint().apply {
+            isAntiAlias = true
+            color = AndroidColor.parseColor("#F5EBE1")
+            alpha = 245
+            style = Paint.Style.FILL
+            setShadowLayer(18f, 0f, 6f, AndroidColor.argb(100, 0, 0, 0))
+        }
+        canvas.drawCircle(centerX, centerY, radius, badgePaint)
+
+        val badgeBorderPaint = Paint().apply {
+            isAntiAlias = true
+            color = AndroidColor.parseColor("#B07D46")
+            alpha = 180
+            style = Paint.Style.STROKE
+            strokeWidth = max(2.5f, diameter * 0.008f)
+        }
+        canvas.drawCircle(centerX, centerY, radius - 2f, badgeBorderPaint)
+
+        // 2. Travel Stamp Symbol-Only Logo (R.drawable.travel_stamp_symbol)
+        val logoSize = diameter * PhotoStampLayout.BADGE_LOGO_DIAMETER_RATIO
+        val logoTop = (centerY - radius) + diameter * PhotoStampLayout.BADGE_PADDING_TOP_RATIO
+        val logoLeft = centerX - logoSize / 2f
+        val logoRect = RectF(logoLeft, logoTop, logoLeft + logoSize, logoTop + logoSize)
+
+        val logoBitmap = getSymbolLogoBitmap(context)
+        if (logoBitmap != null && !logoBitmap.isRecycled) {
+            val srcRect = Rect(0, 0, logoBitmap.width, logoBitmap.height)
+            val logoPaint = Paint().apply {
+                isAntiAlias = true
+                isFilterBitmap = true
+            }
+            canvas.drawBitmap(logoBitmap, srcRect, logoRect, logoPaint)
+        } else {
+            // Safe fallback emblem if resource is unavailable in unit test context
+            val emblemPaint = Paint().apply {
+                isAntiAlias = true
+                textSize = logoSize * 0.5f
+                textAlign = Paint.Align.CENTER
+            }
+            canvas.drawText("🏔️", centerX, logoTop + logoSize * 0.65f, emblemPaint)
+        }
+
+        // 3. "TRAVEL STAMP" Brand Label
+        val brandPaint = Paint().apply {
+            isAntiAlias = true
+            color = inkColor
+            textSize = diameter * PhotoStampLayout.BADGE_BRAND_TEXT_SIZE_RATIO
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.11f
+        }
+        val brandCenterY = (centerY - radius) + diameter * PhotoStampLayout.BADGE_BRAND_CENTER_Y_RATIO
+        val brandBaseline = brandCenterY - (brandPaint.descent() + brandPaint.ascent()) / 2f
+        canvas.drawText("TRAVEL STAMP", centerX, brandBaseline, brandPaint)
+
+        // 4. Collectible Sequence Number (#XXX)
+        val sequenceText = PhotoStampLayout.formatStampSequence(stamp.stampCode, stamp.stampNumber)
+        val serialPaint = Paint().apply {
+            isAntiAlias = true
+            color = AndroidColor.parseColor("#C85A32") // Terracotta
+            textSize = diameter * PhotoStampLayout.BADGE_SERIAL_TEXT_SIZE_RATIO
+            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.08f
+        }
+        val serialCenterY = (centerY - radius) + diameter * PhotoStampLayout.BADGE_SERIAL_CENTER_Y_RATIO
+        val serialBaseline = serialCenterY - (serialPaint.descent() + serialPaint.ascent()) / 2f
+        canvas.drawText(sequenceText, centerX, serialBaseline, serialPaint)
     }
 
     // ==========================================

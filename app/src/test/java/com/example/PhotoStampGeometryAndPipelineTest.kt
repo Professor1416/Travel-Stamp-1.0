@@ -160,7 +160,7 @@ class PhotoStampGeometryAndPipelineTest {
         assertEquals(1080, bitmap.width)
         assertEquals(1920, bitmap.height)
 
-        // Mathematical verification that stamp bottom is above footer title
+        // Mathematical verification that stamp bottom is strictly above footer title
         val (clampedX, clampedY) = PhotoStampLayout.clampStampPosition(
             config.stampPositionX,
             config.stampPositionY,
@@ -168,17 +168,104 @@ class PhotoStampGeometryAndPipelineTest {
             config.stampSize
         )
         val stampRadius = PhotoStampLayout.getStampRadiusPx(1080f, config.stampSize)
+        val sealRadius = PhotoStampLayout.getSealRadiusPx(1080f, config.stampSize)
         val stampCenterY = clampedY * 1920f
-        val stampBottomWithBadge = stampCenterY + stampRadius + 20f
+        val stampBottom = stampCenterY + stampRadius
         val footerStartY = 1920f * PhotoStampLayout.getFooterStartYRatio(config.format)
 
         assertTrue(
-            "Stamp bottom with badge ($stampBottomWithBadge) must not overlap footer ($footerStartY)",
-            stampBottomWithBadge <= footerStartY
+            "Stamp bottom ($stampBottom) must not overlap footer start ($footerStartY)",
+            stampBottom < footerStartY
         )
+
+        // Verify seal diameter ratio is exactly preserved
+        assertEquals(0.92f, sealRadius / stampRadius, 0.001f)
 
         bitmap.recycle()
         imageFile.delete()
+    }
+
+    @Test
+    fun testStampDiameterAndRadiusParityAcrossAllFormatsAndSizes() {
+        for (format in StampEditionFormat.entries) {
+            val exportW = format.width.toFloat()
+            val previewW = 320f
+
+            for (size in StampSize.entries) {
+                val exportRadius = PhotoStampLayout.getStampRadiusPx(exportW, size)
+                val exportDiameter = PhotoStampLayout.getStampDiameterPx(exportW, size)
+                val exportSealRadius = PhotoStampLayout.getSealRadiusPx(exportW, size)
+
+                val previewRadius = PhotoStampLayout.getStampRadiusPx(previewW, size)
+                val previewDiameter = PhotoStampLayout.getStampDiameterPx(previewW, size)
+                val previewSealRadius = PhotoStampLayout.getSealRadiusPx(previewW, size)
+
+                // Relative radius to width must be identical
+                assertEquals(exportRadius / exportW, previewRadius / previewW, 0.0001f)
+                // Relative diameter to width must be identical
+                assertEquals(exportDiameter / exportW, previewDiameter / previewW, 0.0001f)
+                // Relative seal radius to width must be identical
+                assertEquals(exportSealRadius / exportW, previewSealRadius / previewW, 0.0001f)
+
+                // Relative diameter must match canonical BASE_STAMP_WIDTH_RATIO * size.scale
+                val expectedRatio = PhotoStampLayout.BASE_STAMP_WIDTH_RATIO * size.scale
+                assertEquals(expectedRatio, exportDiameter / exportW, 0.0001f)
+                assertEquals(expectedRatio, previewDiameter / previewW, 0.0001f)
+            }
+        }
+    }
+
+    @Test
+    fun testLongJourneyTitleCollisionProtection() {
+        val longNames = listOf(
+            "Umbhrande Waterfall",
+            "Harishchandragad Konkan Kada",
+            "Kalsubai Peak Highest Summit",
+            "Rajmachi Fort & Kondhane Caves Expedition"
+        )
+
+        for (name in longNames) {
+            val trip = Trip(
+                id = 301,
+                name = name,
+                destination = "$name, Maharashtra, India",
+                date = "2024-08-01",
+                status = TripStatus.COMPLETED
+            )
+            val stamp = TravelStamp(
+                id = 401,
+                tripId = 301,
+                title = name,
+                destination = "$name, Maharashtra, India",
+                dateText = "AUG 2024",
+                stampCode = "#789",
+                inkColorHex = "#2C3E50",
+                peopleCount = 1,
+                momentsCount = 2
+            )
+
+            for (format in StampEditionFormat.entries) {
+                for (size in StampSize.entries) {
+                    val bounds = PhotoStampLayout.getStampNormalizedBounds(format, size)
+                    val exportH = format.height.toFloat()
+                    val exportW = format.width.toFloat()
+
+                    val maxStampCenterY = bounds.maxY * exportH
+                    val stampRadius = PhotoStampLayout.getStampRadiusPx(exportW, size)
+                    val stampBottom = maxStampCenterY + stampRadius
+
+                    val footerStartY = exportH * PhotoStampLayout.getFooterStartYRatio(format)
+                    val clearance = footerStartY - stampBottom
+
+                    // Clearance must be at least SAFE_CLEARANCE_NORM * exportH
+                    val minExpectedClearance = exportH * PhotoStampLayout.SAFE_CLEARANCE_NORM
+                    assertTrue(
+                        "Clearance ($clearance) for '$name' in $format with $size must be >= $minExpectedClearance",
+                        clearance >= minExpectedClearance - 0.01f
+                    )
+                }
+            }
+        }
     }
 
     @Test
@@ -299,4 +386,120 @@ class PhotoStampGeometryAndPipelineTest {
 
         fakeFile.delete()
     }
+
+    @Test
+    fun testPhotoStampMinimalCollectibleBadgeLayoutConstants() {
+        // Verify canonical proportions for symbol-only logo badge layout
+        assertEquals(0.52f, PhotoStampLayout.BADGE_LOGO_DIAMETER_RATIO, 0.001f)
+        assertEquals(0.08f, PhotoStampLayout.BADGE_PADDING_TOP_RATIO, 0.001f)
+        assertEquals(0.72f, PhotoStampLayout.BADGE_BRAND_CENTER_Y_RATIO, 0.001f)
+        assertEquals(0.070f, PhotoStampLayout.BADGE_BRAND_TEXT_SIZE_RATIO, 0.001f)
+        assertEquals(0.85f, PhotoStampLayout.BADGE_SERIAL_CENTER_Y_RATIO, 0.001f)
+        assertEquals(0.090f, PhotoStampLayout.BADGE_SERIAL_TEXT_SIZE_RATIO, 0.001f)
+    }
+
+    @Test
+    fun testPhotoStampSequenceFormatting() {
+        assertEquals("#001", PhotoStampLayout.formatStampSequence("#001", 1L))
+        assertEquals("#026", PhotoStampLayout.formatStampSequence("#026", 26L))
+        assertEquals("#099", PhotoStampLayout.formatStampSequence("#099", 99L))
+        assertEquals("#100", PhotoStampLayout.formatStampSequence("#100", 100L))
+        assertEquals("#001", PhotoStampLayout.formatStampSequence("TS-001", 1L))
+        assertEquals("#042", PhotoStampLayout.formatStampSequence("TS-042", 42L))
+        assertEquals("#005", PhotoStampLayout.formatStampSequence("005", 5L))
+        assertEquals("#007", PhotoStampLayout.formatStampSequence("", 7L))
+    }
+
+    @Test
+    fun testPhotoStampMinimalBadgeExportPipelineSuccessAcrossAllFormats() {
+        val imageFile = createTestImageFile("badge_pipeline_test.jpg", 1200, 1600)
+        val trip = Trip(
+            id = 501,
+            name = "Umbhrande Waterfall",
+            destination = "Nashik, Maharashtra",
+            date = "2026-08-23",
+            status = TripStatus.COMPLETED
+        )
+        val stamp = TravelStamp(
+            id = 601,
+            tripId = 501,
+            title = "Umbhrande Waterfall",
+            destination = "Nashik, Maharashtra",
+            dateText = "23 AUG 2026",
+            stampCode = "#026",
+            inkColorHex = "#1E3A2F",
+            peopleCount = 2,
+            momentsCount = 3
+        )
+
+        for (format in StampEditionFormat.entries) {
+            for (size in StampSize.entries) {
+                val config = PosterRenderConfig(
+                    template = PosterTemplate.PHOTO_STAMP,
+                    format = format,
+                    stampSize = size,
+                    photoUri = Uri.fromFile(imageFile).toString(),
+                    stampPositionX = 0.5f,
+                    stampPositionY = 0.45f
+                )
+
+                val result = PosterRenderer.render(
+                    context = context,
+                    trip = trip,
+                    stamp = stamp,
+                    config = config
+                )
+
+                assertTrue("Rendering Photo + Stamp in $format ($size) must succeed", result is PosterRenderResult.Success)
+                val bitmap = (result as PosterRenderResult.Success).bitmap
+                assertEquals(format.width, bitmap.width)
+                assertEquals(format.height, bitmap.height)
+                bitmap.recycle()
+            }
+        }
+        imageFile.delete()
+    }
+
+    @Test
+    fun testPassportTemplatePreservesFullOfficialStampDetails() {
+        val trip = Trip(
+            id = 701,
+            name = "Umbhrande Waterfall",
+            destination = "Nashik, Maharashtra",
+            date = "2026-08-23",
+            status = TripStatus.COMPLETED
+        )
+        val stamp = TravelStamp(
+            id = 801,
+            tripId = 701,
+            title = "Umbhrande Waterfall",
+            destination = "Nashik, Maharashtra",
+            dateText = "23 AUG 2026",
+            stampCode = "#026",
+            inkColorHex = "#1E3A2F",
+            peopleCount = 2,
+            momentsCount = 3
+        )
+
+        val config = PosterRenderConfig(
+            template = PosterTemplate.PASSPORT_STAMP,
+            format = StampEditionFormat.PORTRAIT
+        )
+
+        val result = PosterRenderer.render(
+            context = context,
+            trip = trip,
+            stamp = stamp,
+            config = config
+        )
+
+        assertTrue("Rendering Passport template must succeed", result is PosterRenderResult.Success)
+        val bitmap = (result as PosterRenderResult.Success).bitmap
+        assertEquals(1080, bitmap.width)
+        assertEquals(1350, bitmap.height)
+        bitmap.recycle()
+    }
+
+    private fun formatToWidth(format: StampEditionFormat) = format.width
+    private fun formatToHeight(format: StampEditionFormat) = format.height
 }

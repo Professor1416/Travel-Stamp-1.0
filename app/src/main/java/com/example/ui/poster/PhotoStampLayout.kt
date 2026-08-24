@@ -14,11 +14,21 @@ object PhotoStampLayout {
 
     // Base proportional constants
     const val BASE_STAMP_WIDTH_RATIO = 0.44f // Stamp diameter is 44% of poster width (radius = 22%)
+    const val SEAL_INNER_SCALE = 0.92f // Inner seal diameter relative to backdrop circle
     const val TOP_HEADER_Y_RATIO = 0.0625f // Top header text centered at 6.25% height (120px / 1920px)
+
+    // Internal Photo Stamp Collectible Badge Proportions (relative to canonical stamp diameter)
+    const val BADGE_PADDING_TOP_RATIO = 0.08f // Top padding ratio within badge circle
+    const val BADGE_LOGO_DIAMETER_RATIO = 0.52f // Symbol-only logo width/height relative to badge diameter
+    const val BADGE_BRAND_CENTER_Y_RATIO = 0.72f // "TRAVEL STAMP" vertical center relative to badge diameter
+    const val BADGE_BRAND_TEXT_SIZE_RATIO = 0.070f // "TRAVEL STAMP" font size relative to badge diameter
+    const val BADGE_SERIAL_CENTER_Y_RATIO = 0.85f // "#XXX" vertical center relative to badge diameter
+    const val BADGE_SERIAL_TEXT_SIZE_RATIO = 0.090f // "#XXX" font size relative to badge diameter
 
     // Margin constants in normalized coordinates
     const val HORIZONTAL_MARGIN_NORM = 0.035f // ~38px on 1080px width
     const val TOP_MARGIN_NORM = 0.075f // Safe clearance below header
+    const val SAFE_CLEARANCE_NORM = 0.025f // Strictly safe clearance above destination/title footer
 
     /**
      * Proportional vertical start position of the bottom metadata footer
@@ -33,11 +43,25 @@ object PhotoStampLayout {
     }
 
     /**
-     * Radius of the stamp in pixels for a given poster width and discrete stamp scale.
+     * Radius of the outer stamp backdrop in pixels for a given poster width and discrete stamp scale.
      */
     fun getStampRadiusPx(widthPx: Float, stampSize: StampSize): Float {
         val baseRadius = widthPx * (BASE_STAMP_WIDTH_RATIO / 2f)
         return baseRadius * stampSize.scale
+    }
+
+    /**
+     * Diameter of the outer stamp backdrop in pixels.
+     */
+    fun getStampDiameterPx(widthPx: Float, stampSize: StampSize): Float {
+        return getStampRadiusPx(widthPx, stampSize) * 2f
+    }
+
+    /**
+     * Radius of the inner seal ink in pixels.
+     */
+    fun getSealRadiusPx(widthPx: Float, stampSize: StampSize): Float {
+        return getStampRadiusPx(widthPx, stampSize) * SEAL_INNER_SCALE
     }
 
     /**
@@ -73,7 +97,7 @@ object PhotoStampLayout {
         val minX = radX + HORIZONTAL_MARGIN_NORM
         val maxX = 1.0f - radX - HORIZONTAL_MARGIN_NORM
         val minY = radY + TOP_MARGIN_NORM
-        val maxY = footerStartY - radY - 0.015f // Strictly safe clearance above destination/title
+        val maxY = footerStartY - radY - SAFE_CLEARANCE_NORM
 
         val safeMinX = minX.coerceAtMost(0.49f)
         val safeMaxX = max(safeMinX, maxX)
@@ -162,5 +186,19 @@ object PhotoStampLayout {
             clampedPanY = clampedPanY,
             finalScale = finalScale
         )
+    }
+
+    /**
+     * Formats the collectible stamp sequence number with standard # prefix
+     * matching the app's established numbering conventions.
+     */
+    fun formatStampSequence(stampCode: String, stampNumber: Long): String {
+        val trimmed = stampCode.trim()
+        return when {
+            trimmed.startsWith("#") -> trimmed
+            trimmed.startsWith("TS-", ignoreCase = true) -> "#" + trimmed.substring(3)
+            trimmed.isNotBlank() -> "#$trimmed"
+            else -> "#%03d".format(stampNumber)
+        }
     }
 }

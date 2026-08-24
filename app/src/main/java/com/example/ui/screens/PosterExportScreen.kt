@@ -94,6 +94,7 @@ import com.example.data.model.TravelStamp
 import com.example.data.model.Trip
 import com.example.ui.components.ErrorStateView
 import com.example.ui.components.LoadingView
+import com.example.ui.components.PhotoStampBadgeView
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelOutlinedButton
 import com.example.ui.components.TravelPrimaryButton
@@ -1172,18 +1173,11 @@ private fun ResponsivePosterLivePreview(
                             .testTag("draggable_stamp_seal"),
                         contentAlignment = Alignment.Center
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = SandCanvasLight.copy(alpha = 0.95f),
-                            border = BorderStroke(1.dp, OchreGold.copy(alpha = 0.7f)),
-                            modifier = Modifier.fillMaxSize(),
-                            shadowElevation = 6.dp
-                        ) {}
-
-                        TravelStampView(
-                            stamp = stamp,
-                            size = stampDiameterDp * 0.92f,
-                            rotation = 0f
+                        PhotoStampBadgeView(
+                            stampCode = stamp.stampCode,
+                            stampNumber = stamp.stampNumber,
+                            inkColorHex = stamp.inkColorHex,
+                            size = stampDiameterDp
                         )
                     }
                 }
@@ -1194,7 +1188,7 @@ private fun ResponsivePosterLivePreview(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .offset { IntOffset(0, (footerStartYPx - with(density) { 6.dp.toPx() }).roundToInt()) }
+                        .offset { IntOffset(0, footerStartYPx.roundToInt()) }
                         .padding(horizontal = 14.dp)
                 ) {
                     Text(
