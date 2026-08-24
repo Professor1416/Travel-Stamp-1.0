@@ -17,14 +17,6 @@ object PhotoStampLayout {
     const val SEAL_INNER_SCALE = 0.92f // Inner seal diameter relative to backdrop circle
     const val TOP_HEADER_Y_RATIO = 0.0625f // Top header text centered at 6.25% height (120px / 1920px)
 
-    // Internal Photo Stamp Collectible Badge Proportions (relative to canonical stamp diameter)
-    const val BADGE_PADDING_TOP_RATIO = 0.08f // Top padding ratio within badge circle
-    const val BADGE_LOGO_DIAMETER_RATIO = 0.52f // Symbol-only logo width/height relative to badge diameter
-    const val BADGE_BRAND_CENTER_Y_RATIO = 0.72f // "TRAVEL STAMP" vertical center relative to badge diameter
-    const val BADGE_BRAND_TEXT_SIZE_RATIO = 0.070f // "TRAVEL STAMP" font size relative to badge diameter
-    const val BADGE_SERIAL_CENTER_Y_RATIO = 0.85f // "#XXX" vertical center relative to badge diameter
-    const val BADGE_SERIAL_TEXT_SIZE_RATIO = 0.090f // "#XXX" font size relative to badge diameter
-
     // Margin constants in normalized coordinates
     const val HORIZONTAL_MARGIN_NORM = 0.035f // ~38px on 1080px width
     const val TOP_MARGIN_NORM = 0.075f // Safe clearance below header
@@ -186,19 +178,5 @@ object PhotoStampLayout {
             clampedPanY = clampedPanY,
             finalScale = finalScale
         )
-    }
-
-    /**
-     * Formats the collectible stamp sequence number with standard # prefix
-     * matching the app's established numbering conventions.
-     */
-    fun formatStampSequence(stampCode: String, stampNumber: Long): String {
-        val trimmed = stampCode.trim()
-        return when {
-            trimmed.startsWith("#") -> trimmed
-            trimmed.startsWith("TS-", ignoreCase = true) -> "#" + trimmed.substring(3)
-            trimmed.isNotBlank() -> "#$trimmed"
-            else -> "#%03d".format(stampNumber)
-        }
     }
 }
