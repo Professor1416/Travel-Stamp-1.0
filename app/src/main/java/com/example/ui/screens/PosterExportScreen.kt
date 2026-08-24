@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -100,6 +101,7 @@ import com.example.ui.components.TravelStampView
 import com.example.ui.components.parseInkColor
 import com.example.ui.poster.PosterExporter
 import com.example.ui.poster.PosterRenderConfig
+import com.example.ui.poster.PosterRenderResult
 import com.example.ui.poster.PosterTemplate
 import com.example.ui.poster.StampEditionFormat
 import com.example.ui.poster.StampSize
@@ -196,10 +198,11 @@ fun PosterExportScreen(
     var stampNormY by rememberSaveable { mutableFloatStateOf(0.44f) }
     var selectedStampSize by rememberSaveable { mutableStateOf(StampSize.MEDIUM) }
 
-    // Export operation states
+    // Export & Photo Preparation operation states
     var isSavingToGallery by remember { mutableStateOf(false) }
     var isSharing by remember { mutableStateOf(false) }
-    val isExportActive = isSavingToGallery || isSharing
+    var isPreparingPhoto by remember { mutableStateOf(false) }
+    val isExportActive = isSavingToGallery || isSharing || isPreparingPhoto
 
     // Fingerprint snapshot of last successfully exported state
     var lastExportedFingerprint by rememberSaveable { mutableStateOf<String?>(null) }
@@ -237,20 +240,30 @@ fun PosterExportScreen(
         showDiscardDialog = true
     }
 
-    // System Photo Picker launcher with permanent internal copy and error safety
+    // System Photo Picker launcher with canonical working image optimization
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            try {
-                val permanentPath = PhotoUtils.copyUriToPermanentStorage(context, uri)
-                selectedPhotoUri = permanentPath ?: uri.toString()
-                panX = 0f
-                panY = 0f
-                zoom = 1f
-            } catch (_: Exception) {
-                coroutineScope.launch {
-                    snackbarHostState.showSnackbar("Couldn’t open this photo. Choose another image.")
+            isPreparingPhoto = true
+            coroutineScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    PhotoUtils.prepareWorkingImage(context, uri)
+                }
+                isPreparingPhoto = false
+                when (result) {
+                    is PhotoUtils.WorkingImageResult.Success -> {
+                        selectedPhotoUri = result.filePath
+                        panX = 0f
+                        panY = 0f
+                        zoom = 1f
+                    }
+                    is PhotoUtils.WorkingImageResult.TooLarge -> {
+                        snackbarHostState.showSnackbar("This photo is too large. Choose another image.")
+                    }
+                    is PhotoUtils.WorkingImageResult.Error -> {
+                        snackbarHostState.showSnackbar("Couldn’t prepare this photo. Choose another image.")
+                    }
                 }
             }
         }
@@ -745,10 +758,31 @@ fun PosterExportScreen(
                                                 shape = RoundedCornerShape(12.dp)
                                             )
                                             .clickable {
-                                                selectedPhotoUri = moment.imageUri
-                                                panX = 0f
-                                                panY = 0f
-                                                zoom = 1f
+                                                val momentUriStr = moment.imageUri
+                                                if (!momentUriStr.isNullOrBlank()) {
+                                                    isPreparingPhoto = true
+                                                    coroutineScope.launch {
+                                                        val uri = Uri.parse(momentUriStr)
+                                                        val result = withContext(Dispatchers.IO) {
+                                                            PhotoUtils.prepareWorkingImage(context, uri)
+                                                        }
+                                                        isPreparingPhoto = false
+                                                        when (result) {
+                                                            is PhotoUtils.WorkingImageResult.Success -> {
+                                                                selectedPhotoUri = result.filePath
+                                                                panX = 0f
+                                                                panY = 0f
+                                                                zoom = 1f
+                                                            }
+                                                            is PhotoUtils.WorkingImageResult.TooLarge -> {
+                                                                snackbarHostState.showSnackbar("This photo is too large. Choose another image.")
+                                                            }
+                                                            is PhotoUtils.WorkingImageResult.Error -> {
+                                                                snackbarHostState.showSnackbar("Couldn’t open this journey photo. Choose another image.")
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                             .testTag("moment_photo_thumbnail_$index")
                                     ) {
@@ -825,30 +859,31 @@ fun PosterExportScreen(
                             )
 
                             coroutineScope.launch {
-                                val success = withContext(Dispatchers.IO) {
-                                    val bitmap = PosterExporter.createPosterBitmap(
-                                        context = context,
-                                        trip = currentTrip,
-                                        stamp = currentStamp,
-                                        config = config
-                                    )
-                                    val saved = PosterExporter.savePosterToGallery(
-                                        context = context,
-                                        bitmap = bitmap,
-                                        stamp = currentStamp,
-                                        format = selectedFormat
-                                    )
-                                    try {
-                                        bitmap.recycle()
-                                    } catch (_: Exception) {}
-                                    saved
+                                val saveResult = withContext(Dispatchers.IO) {
+                                    when (val renderResult = PosterExporter.createPosterBitmap(context, currentTrip, currentStamp, config)) {
+                                        is PosterRenderResult.Success -> {
+                                            val saved = PosterExporter.savePosterToGallery(
+                                                context = context,
+                                                bitmap = renderResult.bitmap,
+                                                stamp = currentStamp,
+                                                format = selectedFormat
+                                            )
+                                            try {
+                                                renderResult.bitmap.recycle()
+                                            } catch (_: Exception) {}
+                                            if (saved) Result.success(Unit) else Result.failure(Exception("Failed to save to gallery"))
+                                        }
+                                        is PosterRenderResult.Failure -> {
+                                            Result.failure(Exception(renderResult.reason))
+                                        }
+                                    }
                                 }
                                 isSavingToGallery = false
-                                if (success) {
+                                if (saveResult.isSuccess) {
                                     lastExportedFingerprint = currentPhotoStampFingerprint
                                     snackbarHostState.showSnackbar("Stamp saved to gallery")
                                 } else {
-                                    snackbarHostState.showSnackbar("Couldn't save stamp. Try again.")
+                                    snackbarHostState.showSnackbar("Couldn’t export this photo stamp. Try selecting the photo again.")
                                 }
                             }
                         },
@@ -883,42 +918,46 @@ fun PosterExportScreen(
                             )
 
                             coroutineScope.launch {
-                                val shareUri = withContext(Dispatchers.IO) {
-                                    val bitmap = PosterExporter.createPosterBitmap(
-                                        context = context,
-                                        trip = currentTrip,
-                                        stamp = currentStamp,
-                                        config = config
-                                    )
-                                    val uri = PosterExporter.getShareablePosterUri(
-                                        context = context,
-                                        bitmap = bitmap,
-                                        stamp = currentStamp,
-                                        format = selectedFormat
-                                    )
-                                    try {
-                                        bitmap.recycle()
-                                    } catch (_: Exception) {}
-                                    uri
+                                val shareResult = withContext(Dispatchers.IO) {
+                                    when (val renderResult = PosterExporter.createPosterBitmap(context, currentTrip, currentStamp, config)) {
+                                        is PosterRenderResult.Success -> {
+                                            val uri = PosterExporter.getShareablePosterUri(
+                                                context = context,
+                                                bitmap = renderResult.bitmap,
+                                                stamp = currentStamp,
+                                                format = selectedFormat
+                                            )
+                                            try {
+                                                renderResult.bitmap.recycle()
+                                            } catch (_: Exception) {}
+                                            if (uri != null) Result.success(uri) else Result.failure(Exception("Failed to prepare share URI"))
+                                        }
+                                        is PosterRenderResult.Failure -> {
+                                            Result.failure(Exception(renderResult.reason))
+                                        }
+                                    }
                                 }
                                 isSharing = false
-                                if (shareUri != null) {
-                                    lastExportedFingerprint = currentPhotoStampFingerprint
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "image/png"
-                                        putExtra(Intent.EXTRA_STREAM, shareUri)
-                                        putExtra(
-                                            Intent.EXTRA_TEXT,
-                                            "Official Travel Stamp for ${currentStamp.title} (${currentStamp.stampCode})! 🏔️✨"
+                                shareResult.fold(
+                                    onSuccess = { shareUri ->
+                                        lastExportedFingerprint = currentPhotoStampFingerprint
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "image/png"
+                                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                                            putExtra(
+                                                Intent.EXTRA_TEXT,
+                                                "Official Travel Stamp for ${currentStamp.title} (${currentStamp.stampCode})! 🏔️✨"
+                                            )
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(
+                                            Intent.createChooser(shareIntent, "Share Travel Stamp")
                                         )
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    },
+                                    onFailure = {
+                                        snackbarHostState.showSnackbar("Couldn’t prepare this photo stamp for sharing.")
                                     }
-                                    context.startActivity(
-                                        Intent.createChooser(shareIntent, "Share Travel Stamp")
-                                    )
-                                } else {
-                                    snackbarHostState.showSnackbar("Couldn't prepare stamp for sharing.")
-                                }
+                                )
                             }
                         },
                         testTag = "share_poster_button"

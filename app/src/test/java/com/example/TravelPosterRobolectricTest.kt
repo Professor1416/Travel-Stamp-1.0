@@ -2,6 +2,7 @@ package com.example
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.net.Uri
@@ -21,9 +22,12 @@ import com.example.data.repository.TravelStampRepositoryImpl
 import com.example.data.repository.TripRepositoryImpl
 import com.example.ui.poster.PosterExporter
 import com.example.ui.poster.PosterRenderConfig
+import com.example.ui.poster.PosterRenderResult
 import com.example.ui.poster.PosterRenderer
 import com.example.ui.poster.PosterTemplate
 import com.example.ui.poster.StampEditionFormat
+import com.example.ui.poster.StampSize
+import com.example.ui.util.PhotoUtils
 import com.example.ui.viewmodel.TravelViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -38,10 +42,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.io.FileOutputStream
 
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34])
 class TravelPosterRobolectricTest {
 
@@ -142,8 +148,9 @@ class TravelPosterRobolectricTest {
             template = PosterTemplate.PASSPORT_STAMP,
             format = StampEditionFormat.SQUARE
         )
-        val squareBitmap = PosterRenderer.render(context, trip, stamp, squareConfig)
-        assertNotNull(squareBitmap)
+        val squareResult = PosterRenderer.render(context, trip, stamp, squareConfig)
+        assertTrue(squareResult is PosterRenderResult.Success)
+        val squareBitmap = (squareResult as PosterRenderResult.Success).bitmap
         assertEquals(1080, squareBitmap.width)
         assertEquals(1080, squareBitmap.height)
         squareBitmap.recycle()
@@ -153,8 +160,9 @@ class TravelPosterRobolectricTest {
             template = PosterTemplate.PASSPORT_STAMP,
             format = StampEditionFormat.PORTRAIT
         )
-        val portraitBitmap = PosterRenderer.render(context, trip, stamp, portraitConfig)
-        assertNotNull(portraitBitmap)
+        val portraitResult = PosterRenderer.render(context, trip, stamp, portraitConfig)
+        assertTrue(portraitResult is PosterRenderResult.Success)
+        val portraitBitmap = (portraitResult as PosterRenderResult.Success).bitmap
         assertEquals(1080, portraitBitmap.width)
         assertEquals(1440, portraitBitmap.height)
         portraitBitmap.recycle()
@@ -164,8 +172,9 @@ class TravelPosterRobolectricTest {
             template = PosterTemplate.PASSPORT_STAMP,
             format = StampEditionFormat.STORY
         )
-        val storyBitmap = PosterRenderer.render(context, trip, stamp, storyConfig)
-        assertNotNull(storyBitmap)
+        val storyResult = PosterRenderer.render(context, trip, stamp, storyConfig)
+        assertTrue(storyResult is PosterRenderResult.Success)
+        val storyBitmap = (storyResult as PosterRenderResult.Success).bitmap
         assertEquals(1080, storyBitmap.width)
         assertEquals(1920, storyBitmap.height)
         storyBitmap.recycle()
@@ -206,7 +215,6 @@ class TravelPosterRobolectricTest {
         )
 
         assertTrue(fitted.lines.size in 1..2)
-        // All words should be present across lines without broken mid-words
         val reconstructed = fitted.lines.joinToString(" ")
         assertTrue(reconstructed.contains("Harishchandragad"))
         assertTrue(reconstructed.contains("Konkan Kada"))
@@ -256,8 +264,9 @@ class TravelPosterRobolectricTest {
             template = PosterTemplate.PASSPORT_STAMP,
             format = StampEditionFormat.SQUARE
         )
-        val bitmapSquare = PosterRenderer.render(context, trip, stamp, configSquare)
-        assertNotNull(bitmapSquare)
+        val squareResult = PosterRenderer.render(context, trip, stamp, configSquare)
+        assertTrue(squareResult is PosterRenderResult.Success)
+        val bitmapSquare = (squareResult as PosterRenderResult.Success).bitmap
         assertEquals(1080, bitmapSquare.width)
         assertEquals(1080, bitmapSquare.height)
         bitmapSquare.recycle()
@@ -266,8 +275,9 @@ class TravelPosterRobolectricTest {
             template = PosterTemplate.PASSPORT_STAMP,
             format = StampEditionFormat.PORTRAIT
         )
-        val bitmapPortrait = PosterRenderer.render(context, trip, stamp, configPortrait)
-        assertNotNull(bitmapPortrait)
+        val portraitResult = PosterRenderer.render(context, trip, stamp, configPortrait)
+        assertTrue(portraitResult is PosterRenderResult.Success)
+        val bitmapPortrait = (portraitResult as PosterRenderResult.Success).bitmap
         assertEquals(1080, bitmapPortrait.width)
         assertEquals(1440, bitmapPortrait.height)
         bitmapPortrait.recycle()
@@ -299,7 +309,9 @@ class TravelPosterRobolectricTest {
             template = PosterTemplate.PASSPORT_STAMP,
             format = StampEditionFormat.PORTRAIT
         )
-        val bitmap = PosterRenderer.render(context, trip, stamp, config)
+        val renderResult = PosterRenderer.render(context, trip, stamp, config)
+        assertTrue(renderResult is PosterRenderResult.Success)
+        val bitmap = (renderResult as PosterRenderResult.Success).bitmap
         val uri = PosterExporter.getShareablePosterUri(context, bitmap, stamp, StampEditionFormat.PORTRAIT)
         bitmap.recycle()
 
@@ -328,10 +340,12 @@ class TravelPosterRobolectricTest {
             peopleCount = 2,
             momentsCount = 1
         )
-        val bitmap = PosterRenderer.render(
+        val renderResult = PosterRenderer.render(
             context, trip, stamp,
             PosterRenderConfig(template = PosterTemplate.PASSPORT_STAMP, format = StampEditionFormat.PORTRAIT)
         )
+        assertTrue(renderResult is PosterRenderResult.Success)
+        val bitmap = (renderResult as PosterRenderResult.Success).bitmap
         val saved = PosterExporter.savePosterToGallery(context, bitmap, stamp, StampEditionFormat.PORTRAIT)
         bitmap.recycle()
         assertTrue(saved)
@@ -361,8 +375,9 @@ class TravelPosterRobolectricTest {
         // Render Square, Portrait, and Story
         for (format in listOf(StampEditionFormat.SQUARE, StampEditionFormat.PORTRAIT, StampEditionFormat.STORY)) {
             val config = PosterRenderConfig(template = PosterTemplate.PASSPORT_STAMP, format = format)
-            val bitmap = PosterExporter.createPosterBitmap(context, trip, stamp, config)
-            assertNotNull(bitmap)
+            val renderResult = PosterExporter.createPosterBitmap(context, trip, stamp, config)
+            assertTrue(renderResult is PosterRenderResult.Success)
+            val bitmap = (renderResult as PosterRenderResult.Success).bitmap
             assertEquals(format.width, bitmap.width)
             assertEquals(format.height, bitmap.height)
             bitmap.recycle()
@@ -405,13 +420,14 @@ class TravelPosterRobolectricTest {
 
         // Create a temporary sample photo bitmap
         val samplePhotoFile = File(context.cacheDir, "test_photo_sample.jpg")
-        val sampleBitmap = Bitmap.createBitmap(800, 600, Bitmap.Config.ARGB_8888)
+        val samplePixels = IntArray(800 * 600) { AndroidColor.DKGRAY }
+        val sampleBitmap = Bitmap.createBitmap(samplePixels, 800, 600, Bitmap.Config.ARGB_8888)
         FileOutputStream(samplePhotoFile).use { out ->
             sampleBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
         sampleBitmap.recycle()
 
-        val photoUri = samplePhotoFile.toURI().toString()
+        val photoUri = samplePhotoFile.absolutePath
 
         // Render Photo+Stamp across all formats with custom framing and stamp positioning
         for (format in StampEditionFormat.values()) {
@@ -424,11 +440,12 @@ class TravelPosterRobolectricTest {
                 zoom = 1.2f,
                 stampPositionX = 0.45f,
                 stampPositionY = 0.50f,
-                stampSize = com.example.ui.poster.StampSize.LARGE
+                stampSize = StampSize.LARGE
             )
 
-            val bitmap = PosterRenderer.render(context, trip, stamp, config)
-            assertNotNull(bitmap)
+            val renderResult = PosterRenderer.render(context, trip, stamp, config)
+            assertTrue(renderResult is PosterRenderResult.Success)
+            val bitmap = (renderResult as PosterRenderResult.Success).bitmap
             assertEquals(format.width, bitmap.width)
             assertEquals(format.height, bitmap.height)
             bitmap.recycle()
@@ -499,66 +516,229 @@ class TravelPosterRobolectricTest {
 
         assertTrue("Fitted lines should be 1 to 3", fitted.lines.size in 1..3)
         assertTrue("Lines should not contain ellipsis", fitted.lines.none { it.contains("…") })
-        // All words should be present
         val allText = fitted.lines.joinToString(" ")
         assertTrue(allText.contains("EXPEDITION"))
         assertTrue(allText.contains("HIGHEST"))
         assertTrue(allText.contains("GHATS"))
     }
 
+    // =========================================================================
+    // PASS D.2 MANDATORY BITMAP-CONTENT REGRESSION & HARDENING TESTS
+    // =========================================================================
+
     @Test
-    fun testPassD1PhotoStampExportPreservesSelectedPhotoAndDoesNotUseFallback() {
-        val trip = Trip(
-            id = 301L,
-            name = "Kalsubai Peak Trek",
-            destination = "Bhandardara, Maharashtra",
-            date = "2026-08-20",
-            status = TripStatus.COMPLETED,
-            stampEarned = true
-        )
+    fun testPhotoStampActualImageContentExportVerification() {
+        // Create a distinctive test image with split colors: Left half is Pure RED, Right half is Pure BLUE
+        val sourceWidth = 1000
+        val sourceHeight = 1000
+        val pixels = IntArray(sourceWidth * sourceHeight)
+        for (y in 0 until sourceHeight) {
+            for (x in 0 until sourceWidth) {
+                pixels[y * sourceWidth + x] = if (x < 500) AndroidColor.RED else AndroidColor.BLUE
+            }
+        }
+        val sourceBitmap = Bitmap.createBitmap(pixels, sourceWidth, sourceHeight, Bitmap.Config.ARGB_8888)
+
+        val sourceFile = File(context.cacheDir, "red_blue_test.png")
+        FileOutputStream(sourceFile).use { out ->
+            sourceBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        sourceBitmap.recycle()
+
+        // Prepare working image through PhotoUtils canonical pipeline
+        val workingResult = PhotoUtils.prepareWorkingImage(context, Uri.fromFile(sourceFile))
+        assertTrue("Working image preparation must succeed", workingResult is PhotoUtils.WorkingImageResult.Success)
+        val workingPath = (workingResult as PhotoUtils.WorkingImageResult.Success).filePath
+
+        val trip = Trip(id = 501L, name = "Harishchandragad", destination = "Western Ghats", date = "2026-08-23")
         val stamp = TravelStamp(
-            id = 301L,
-            tripId = 301L,
-            stampNumber = 12L,
-            stampCode = "#012",
-            title = "Kalsubai Peak Trek",
-            destination = "Bhandardara, Maharashtra",
-            dateText = "20 AUG 2026",
-            peopleCount = 5,
-            momentsCount = 3
+            id = 501L,
+            tripId = 501L,
+            stampNumber = 20L,
+            stampCode = "#020",
+            title = "Harishchandragad",
+            destination = "Western Ghats",
+            dateText = "23 AUG 2026",
+            peopleCount = 2,
+            momentsCount = 1
         )
 
-        // Create sample photo file in cache
-        val testPhotoFile = File(context.cacheDir, "kalsubai_export_test.jpg")
-        val sampleBitmap = Bitmap.createBitmap(600, 450, Bitmap.Config.ARGB_8888)
-        FileOutputStream(testPhotoFile).use { out ->
-            sampleBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        val config = PosterRenderConfig(
+            template = PosterTemplate.PHOTO_STAMP,
+            format = StampEditionFormat.SQUARE,
+            photoUri = workingPath,
+            panX = 0f,
+            panY = 0f,
+            zoom = 1f,
+            stampPositionX = 0.5f,
+            stampPositionY = 0.5f,
+            stampSize = StampSize.MEDIUM
+        )
+
+        val renderResult = PosterRenderer.render(context, trip, stamp, config)
+        assertTrue("Render must succeed with valid working image", renderResult is PosterRenderResult.Success)
+        val renderedBitmap = (renderResult as PosterRenderResult.Success).bitmap
+
+        assertEquals(1080, renderedBitmap.width)
+        assertEquals(1080, renderedBitmap.height)
+
+        // Sample pixels on the left (should be predominantly RED from the photo, not green/gold branded fallback)
+        // Sample at y = 350 (above footer, away from gradients)
+        val leftPixel = renderedBitmap.getPixel(150, 350)
+        val leftRed = AndroidColor.red(leftPixel)
+        val leftBlue = AndroidColor.blue(leftPixel)
+        val leftGreen = AndroidColor.green(leftPixel)
+
+        assertTrue(
+            "Left side of poster must contain user photo RED content (expected red>120, blue<80, but got red=$leftRed, blue=$leftBlue, green=$leftGreen, pixelHex=${Integer.toHexString(leftPixel)})",
+            leftRed > 120 && leftBlue < 80
+        )
+
+        // Sample pixels on the right (should be predominantly BLUE from the photo)
+        val rightPixel = renderedBitmap.getPixel(930, 350)
+        val rightRed = AndroidColor.red(rightPixel)
+        val rightBlue = AndroidColor.blue(rightPixel)
+        val rightGreen = AndroidColor.green(rightPixel)
+
+        assertTrue(
+            "Right side of poster must contain user photo BLUE content (expected blue>120, red<80, but got red=$rightRed, blue=$rightBlue, green=$rightGreen, pixelHex=${Integer.toHexString(rightPixel)})",
+            rightBlue > 120 && rightRed < 80
+        )
+
+        // Test saving to gallery
+        val saved = PosterExporter.savePosterToGallery(context, renderedBitmap, stamp, StampEditionFormat.SQUARE)
+        assertTrue("Saving rendered photo stamp poster to gallery must succeed", saved)
+
+        // Test shareable URI generation
+        val shareUri = PosterExporter.getShareablePosterUri(context, renderedBitmap, stamp, StampEditionFormat.SQUARE)
+        assertNotNull("Shareable URI for photo stamp must not be null", shareUri)
+
+        renderedBitmap.recycle()
+        sourceFile.delete()
+    }
+
+    @Test
+    fun testPhotoStampMissingPhotoFailsExplicitly() {
+        val trip = Trip(id = 502L, name = "Dudhsagar Falls", destination = "Goa", date = "2026-08-23")
+        val stamp = TravelStamp(
+            id = 502L,
+            tripId = 502L,
+            stampNumber = 21L,
+            stampCode = "#021",
+            title = "Dudhsagar Falls",
+            destination = "Goa",
+            dateText = "23 AUG 2026",
+            peopleCount = 2,
+            momentsCount = 0
+        )
+
+        // Null photoUri
+        val nullConfig = PosterRenderConfig(
+            template = PosterTemplate.PHOTO_STAMP,
+            format = StampEditionFormat.PORTRAIT,
+            photoUri = null
+        )
+        val nullResult = PosterRenderer.render(context, trip, stamp, nullConfig)
+        assertTrue("Render with null photoUri must return Failure", nullResult is PosterRenderResult.Failure)
+
+        // Blank photoUri
+        val blankConfig = PosterRenderConfig(
+            template = PosterTemplate.PHOTO_STAMP,
+            format = StampEditionFormat.PORTRAIT,
+            photoUri = "   "
+        )
+        val blankResult = PosterRenderer.render(context, trip, stamp, blankConfig)
+        assertTrue("Render with blank photoUri must return Failure", blankResult is PosterRenderResult.Failure)
+    }
+
+    @Test
+    fun testPhotoStampInvalidPhotoFailsExplicitly() {
+        val trip = Trip(id = 503L, name = "Sinhagad Fort", destination = "Pune", date = "2026-08-23")
+        val stamp = TravelStamp(
+            id = 503L,
+            tripId = 503L,
+            stampNumber = 22L,
+            stampCode = "#022",
+            title = "Sinhagad Fort",
+            destination = "Pune",
+            dateText = "23 AUG 2026",
+            peopleCount = 2,
+            momentsCount = 0
+        )
+
+        val invalidConfig = PosterRenderConfig(
+            template = PosterTemplate.PHOTO_STAMP,
+            format = StampEditionFormat.PORTRAIT,
+            photoUri = "/nonexistent/directory/invalid_image_12345.jpg"
+        )
+        val invalidResult = PosterRenderer.render(context, trip, stamp, invalidConfig)
+        assertTrue("Render with invalid photo path must return Failure and never fake a fallback poster", invalidResult is PosterRenderResult.Failure)
+    }
+
+    @Test
+    fun testPhotoUtilsInSampleSizeCalculation() {
+        // High resolution 8000x6000 downsampled to target 2560
+        val sampleSize8k = PhotoUtils.calculateInSampleSize(8000, 6000, 2560)
+        assertTrue("8000x6000 image must have sampleSize >= 2", sampleSize8k >= 2)
+
+        // High resolution 12000x9000 downsampled to target 2560
+        val sampleSize12k = PhotoUtils.calculateInSampleSize(12000, 9000, 2560)
+        assertTrue("12000x9000 image must have sampleSize >= 4", sampleSize12k >= 4)
+
+        // Standard 1920x1080 fits within 2560 -> sampleSize 1
+        val sampleSizeStandard = PhotoUtils.calculateInSampleSize(1920, 1080, 2560)
+        assertEquals(1, sampleSizeStandard)
+    }
+
+    @Test
+    fun testPhotoUtilsCacheCleanupSafety() {
+        val editorDir = File(context.cacheDir, "photo_editor")
+        editorDir.mkdirs()
+
+        // Create 8 dummy files in cacheDir/photo_editor
+        for (i in 1..8) {
+            val file = File(editorDir, "edit_temp_$i.jpg")
+            file.writeText("sample data $i")
+            file.setLastModified(System.currentTimeMillis() + i * 1000)
         }
-        sampleBitmap.recycle()
 
-        val photoUri = testPhotoFile.toURI().toString()
+        // Create a persistent moment file in filesDir/moments
+        val momentsDir = File(context.filesDir, "moments")
+        momentsDir.mkdirs()
+        val persistentMoment = File(momentsDir, "moment_sacred_record.jpg")
+        persistentMoment.writeText("permanent moment data")
 
-        for (format in StampEditionFormat.values()) {
-            val config = PosterRenderConfig(
-                template = PosterTemplate.PHOTO_STAMP,
-                format = format,
-                photoUri = photoUri,
-                panX = 0f,
-                panY = 0f,
-                zoom = 1f,
-                stampPositionX = 0.5f,
-                stampPositionY = 0.45f,
-                stampSize = com.example.ui.poster.StampSize.MEDIUM
-            )
+        // Run cleanup on editor working directory with limit 3
+        PhotoUtils.cleanupWorkingDir(editorDir, maxFilesToKeep = 3)
 
-            val renderedPoster = PosterRenderer.render(context, trip, stamp, config)
-            assertNotNull(renderedPoster)
-            assertEquals(format.width, renderedPoster.width)
-            assertEquals(format.height, renderedPoster.height)
-            renderedPoster.recycle()
+        // Verify photo_editor only has 3 newest files
+        val remainingEditorFiles = editorDir.listFiles()
+        assertNotNull(remainingEditorFiles)
+        assertEquals(3, remainingEditorFiles!!.size)
+
+        // Verify persistent moments are completely untouched
+        assertTrue("Persistent moment in filesDir must NEVER be deleted by editor cleanup", persistentMoment.exists())
+        assertEquals("permanent moment data", persistentMoment.readText())
+
+        persistentMoment.delete()
+    }
+
+    @Test
+    fun testPosterExporterCacheCleanupSafety() {
+        val posterDir = File(context.cacheDir, "posters")
+        posterDir.mkdirs()
+
+        for (i in 1..7) {
+            val file = File(posterDir, "poster_temp_$i.png")
+            file.writeText("poster $i")
+            file.setLastModified(System.currentTimeMillis() + i * 1000)
         }
 
-        testPhotoFile.delete()
+        PosterExporter.cleanupPosterCache(posterDir, maxFilesToKeep = 3)
+
+        val remaining = posterDir.listFiles()
+        assertNotNull(remaining)
+        assertEquals(3, remaining!!.size)
     }
 
     @Test
@@ -586,7 +766,7 @@ class TravelPosterRobolectricTest {
             zoom = 1.3f,
             stampPositionX = 0.4f,
             stampPositionY = 0.6f,
-            stampSize = com.example.ui.poster.StampSize.LARGE
+            stampSize = StampSize.LARGE
         )
 
         val shareConfig = PosterRenderConfig(
@@ -598,7 +778,7 @@ class TravelPosterRobolectricTest {
             zoom = 1.3f,
             stampPositionX = 0.4f,
             stampPositionY = 0.6f,
-            stampSize = com.example.ui.poster.StampSize.LARGE
+            stampSize = StampSize.LARGE
         )
 
         assertEquals(saveConfig.photoUri, shareConfig.photoUri)
@@ -631,8 +811,9 @@ class TravelPosterRobolectricTest {
                 template = PosterTemplate.PASSPORT_STAMP,
                 format = format
             )
-            val bitmap = PosterRenderer.render(context, trip, stamp, config)
-            assertNotNull(bitmap)
+            val renderResult = PosterRenderer.render(context, trip, stamp, config)
+            assertTrue(renderResult is PosterRenderResult.Success)
+            val bitmap = (renderResult as PosterRenderResult.Success).bitmap
             assertEquals(format.width, bitmap.width)
             assertEquals(format.height, bitmap.height)
             bitmap.recycle()
@@ -700,4 +881,3 @@ class TravelPosterRobolectricTest {
         assertTrue(isSaveAndShareEnabled(PosterTemplate.PASSPORT_STAMP, null, false))
     }
 }
-

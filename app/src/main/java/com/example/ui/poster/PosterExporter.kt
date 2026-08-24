@@ -24,7 +24,7 @@ object PosterExporter {
         trip: Trip,
         stamp: TravelStamp,
         config: PosterRenderConfig
-    ): Bitmap {
+    ): PosterRenderResult {
         return PosterRenderer.render(context, trip, stamp, config)
     }
 
@@ -114,7 +114,7 @@ object PosterExporter {
         }
     }
 
-    private fun cleanupPosterCache(dir: File, maxFilesToKeep: Int) {
+    internal fun cleanupPosterCache(dir: File, maxFilesToKeep: Int) {
         try {
             val files = dir.listFiles() ?: return
             if (files.size > maxFilesToKeep) {

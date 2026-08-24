@@ -18,6 +18,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import com.example.data.model.TravelStamp
 import com.example.data.model.Trip
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -31,6 +32,11 @@ import kotlin.math.sin
  * Square (1080x1080), Portrait (1080x1440), and Story (1080x1920) formats.
  * Pure presentation logic: strictly read-only, never alters Trip, Stamp, or database records.
  */
+sealed interface PosterRenderResult {
+    data class Success(val bitmap: Bitmap) : PosterRenderResult
+    data class Failure(val reason: String) : PosterRenderResult
+}
+
 object PosterRenderer {
 
     const val POSTER_WIDTH = 1080
@@ -48,41 +54,41 @@ object PosterRenderer {
         trip: Trip,
         stamp: TravelStamp,
         config: PosterRenderConfig
-    ): Bitmap {
+    ): PosterRenderResult {
         val targetWidth = config.format.width
         val targetHeight = config.format.height
 
-        val bitmap = try {
-            Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-        } catch (_: OutOfMemoryError) {
-            Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.RGB_565)
-        }
-
-        val canvas = Canvas(bitmap)
-
-        when (config.template) {
+        return when (config.template) {
             PosterTemplate.PHOTO_STAMP -> {
-                renderTemplateA(context, canvas, trip, stamp, config, targetWidth, targetHeight)
+                renderTemplateA(context, trip, stamp, config, targetWidth, targetHeight)
             }
             PosterTemplate.PASSPORT_STAMP -> {
-                renderTemplateB(canvas, trip, stamp, config.format, targetWidth, targetHeight)
+                renderTemplateB(trip, stamp, config.format, targetWidth, targetHeight)
             }
         }
-
-        return bitmap
     }
 
     // ==========================================
     // TEMPLATE B: RESPONSIVE PASSPORT STAMP (PASS B)
     // ==========================================
     private fun renderTemplateB(
-        canvas: Canvas,
         trip: Trip,
         stamp: TravelStamp,
         format: StampEditionFormat,
         widthPx: Int,
         heightPx: Int
-    ) {
+    ): PosterRenderResult {
+        val bitmap = try {
+            Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        } catch (_: OutOfMemoryError) {
+            try {
+                Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.RGB_565)
+            } catch (_: OutOfMemoryError) {
+                return PosterRenderResult.Failure("Insufficient memory to create poster bitmap.")
+            }
+        }
+
+        val canvas = Canvas(bitmap)
         val width = widthPx.toFloat()
         val height = heightPx.toFloat()
 
@@ -363,6 +369,8 @@ object PosterRenderer {
             letterSpacing = 0.16f
         }
         canvas.drawText("TRAVEL STAMP 🏔️ • OFFICIAL EXPEDITION LOG", width / 2f, footerY, footerPaint)
+
+        return PosterRenderResult.Success(bitmap)
     }
 
     // ==========================================
@@ -370,37 +378,44 @@ object PosterRenderer {
     // ==========================================
     private fun renderTemplateA(
         context: Context,
-        canvas: Canvas,
         trip: Trip,
         stamp: TravelStamp,
         config: PosterRenderConfig,
         widthPx: Int,
         heightPx: Int
-    ) {
+    ): PosterRenderResult {
+        if (config.photoUri.isNullOrBlank()) {
+            return PosterRenderResult.Failure("No photo selected for Photo + Stamp edition.")
+        }
+
+        val decodedPhoto = loadSafeOrientedBitmap(
+            context = context,
+            uriString = config.photoUri,
+            reqWidth = widthPx,
+            reqHeight = heightPx
+        ) ?: return PosterRenderResult.Failure("Could not decode selected photo from: ${config.photoUri}")
+
         val width = widthPx.toFloat()
         val height = heightPx.toFloat()
 
-        // 1. Render Photo or Branded Fallback
-        var photoDrawn = false
-        if (!config.photoUri.isNullOrBlank()) {
-            val decodedPhoto = loadSafeOrientedBitmap(
-                context = context,
-                uriString = config.photoUri,
-                reqWidth = widthPx,
-                reqHeight = heightPx
-            )
-            if (decodedPhoto != null) {
-                drawTransformedPhoto(canvas, decodedPhoto, width, height, config.panX, config.panY, config.zoom)
-                try {
-                    decodedPhoto.recycle()
-                } catch (_: Exception) {}
-                photoDrawn = true
+        val bitmap = try {
+            Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        } catch (_: OutOfMemoryError) {
+            try {
+                Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.RGB_565)
+            } catch (_: OutOfMemoryError) {
+                decodedPhoto.recycle()
+                return PosterRenderResult.Failure("Insufficient memory to allocate poster bitmap.")
             }
         }
 
-        if (!photoDrawn) {
-            drawBrandedFallbackBackground(canvas, width, height, stamp)
-        }
+        val canvas = Canvas(bitmap)
+
+        // 1. Render User Photo with Pan and Zoom Transforms
+        drawTransformedPhoto(canvas, decodedPhoto, width, height, config.panX, config.panY, config.zoom)
+        try {
+            decodedPhoto.recycle()
+        } catch (_: Exception) {}
 
         // 2. Gradient Overlays for High Legibility & Contrast
         drawTemplateAGradients(canvas, width, height)
@@ -459,6 +474,18 @@ object PosterRenderer {
         )
 
         // 5. Bottom Metadata Typography
+        drawTemplateAFooter(canvas, width, height, stamp, trip)
+
+        return PosterRenderResult.Success(bitmap)
+    }
+
+    private fun drawTemplateAFooter(
+        canvas: Canvas,
+        width: Float,
+        height: Float,
+        stamp: TravelStamp,
+        trip: Trip
+    ) {
         val contentStartY = height * 0.70f
         val maxTextWidth = width - 180f
 
@@ -842,62 +869,45 @@ object PosterRenderer {
     ): Bitmap? {
         return try {
             val uri = Uri.parse(uriString)
-            val openInput: () -> InputStream? = {
-                if (uri.scheme == "file" || uri.scheme == null) {
-                    val file = File(uri.path ?: uriString)
-                    if (file.exists() && file.canRead()) FileInputStream(file) else null
-                } else {
-                    context.contentResolver.openInputStream(uri)
+            val directFile: File? = when {
+                uriString.startsWith("/") -> File(uriString)
+                uri.scheme == "file" || uri.scheme == null -> {
+                    val path = uri.path ?: uriString.removePrefix("file://").removePrefix("file:")
+                    File(path)
                 }
+                else -> null
             }
 
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
-            openInput()?.use { input ->
-                BitmapFactory.decodeStream(input, null, options)
-            } ?: return null
+            if (directFile != null && directFile.exists() && directFile.canRead()) {
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(directFile.absolutePath, options)
+                if (options.outWidth <= 0 || options.outHeight <= 0) return null
 
-            val outWidth = options.outWidth
-            val outHeight = options.outHeight
-            if (outWidth <= 0 || outHeight <= 0) return null
-
-            var sampleSize = 1
-            if (outHeight > reqHeight || outWidth > reqWidth) {
-                val halfHeight = outHeight / 2
-                val halfWidth = outWidth / 2
-                while ((halfHeight / sampleSize) >= reqHeight && (halfWidth / sampleSize) >= reqWidth) {
-                    sampleSize *= 2
+                val sampleSize = calculateInSampleSize(options.outWidth, options.outHeight, max(reqWidth, reqHeight))
+                val decodeOptions = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
                 }
-            }
-
-            val decodeOptions = BitmapFactory.Options().apply {
-                inSampleSize = sampleSize
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-
-            val rawBitmap = openInput()?.use { input ->
-                BitmapFactory.decodeStream(input, null, decodeOptions)
-            } ?: return null
-
-            val orientation = getExifOrientation(context, uri, uriString)
-            val matrix = Matrix()
-            when (orientation) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
-                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
-                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
-                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
-            }
-
-            if (!matrix.isIdentity) {
-                val rotated = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
-                if (rotated != rawBitmap) {
-                    rawBitmap.recycle()
-                }
-                rotated
+                val rawBitmap = BitmapFactory.decodeFile(directFile.absolutePath, decodeOptions) ?: return null
+                val orientation = getExifOrientation(context, uri, uriString)
+                applyExifOrientation(rawBitmap, orientation)
             } else {
-                rawBitmap
+                val openInput: () -> InputStream? = {
+                    context.contentResolver.openInputStream(uri)?.let { BufferedInputStream(it) }
+                }
+
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                openInput()?.use { input -> BitmapFactory.decodeStream(input, null, options) } ?: return null
+                if (options.outWidth <= 0 || options.outHeight <= 0) return null
+
+                val sampleSize = calculateInSampleSize(options.outWidth, options.outHeight, max(reqWidth, reqHeight))
+                val decodeOptions = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                val rawBitmap = openInput()?.use { input -> BitmapFactory.decodeStream(input, null, decodeOptions) } ?: return null
+                val orientation = getExifOrientation(context, uri, uriString)
+                applyExifOrientation(rawBitmap, orientation)
             }
         } catch (_: Exception) {
             null
@@ -906,23 +916,70 @@ object PosterRenderer {
         }
     }
 
+    private fun calculateInSampleSize(width: Int, height: Int, maxDim: Int): Int {
+        var inSampleSize = 1
+        val maxTarget = maxDim.coerceAtLeast(1)
+        if (width > maxTarget || height > maxTarget) {
+            var currentW = width
+            var currentH = height
+            while (currentW / 2 >= maxTarget || currentH / 2 >= maxTarget) {
+                inSampleSize *= 2
+                currentW /= 2
+                currentH /= 2
+            }
+        }
+        return inSampleSize.coerceAtLeast(1)
+    }
+
+    private fun applyExifOrientation(rawBitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+        }
+        return if (!matrix.isIdentity) {
+            val rotated = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+            if (rotated != rawBitmap) {
+                rawBitmap.recycle()
+            }
+            rotated
+        } else {
+            rawBitmap
+        }
+    }
+
     private fun getExifOrientation(context: Context, uri: Uri, uriString: String): Int {
         return try {
-            if (uri.scheme == "file" || uri.scheme == null) {
-                val file = File(uri.path ?: uriString)
-                if (file.exists()) {
-                    ExifInterface(file.absolutePath).getAttributeInt(
-                        ExifInterface.TAG_ORIENTATION,
-                        ExifInterface.ORIENTATION_NORMAL
-                    )
-                } else ExifInterface.ORIENTATION_NORMAL
-            } else {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    ExifInterface(stream).getAttributeInt(
-                        ExifInterface.TAG_ORIENTATION,
-                        ExifInterface.ORIENTATION_NORMAL
-                    )
-                } ?: ExifInterface.ORIENTATION_NORMAL
+            when {
+                uriString.startsWith("/") -> {
+                    val file = File(uriString)
+                    if (file.exists()) {
+                        ExifInterface(file.absolutePath).getAttributeInt(
+                            ExifInterface.TAG_ORIENTATION,
+                            ExifInterface.ORIENTATION_NORMAL
+                        )
+                    } else ExifInterface.ORIENTATION_NORMAL
+                }
+                uri.scheme == "file" || uri.scheme == null -> {
+                    val file = File(uri.path ?: uriString)
+                    if (file.exists()) {
+                        ExifInterface(file.absolutePath).getAttributeInt(
+                            ExifInterface.TAG_ORIENTATION,
+                            ExifInterface.ORIENTATION_NORMAL
+                        )
+                    } else ExifInterface.ORIENTATION_NORMAL
+                }
+                else -> {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        ExifInterface(stream).getAttributeInt(
+                            ExifInterface.TAG_ORIENTATION,
+                            ExifInterface.ORIENTATION_NORMAL
+                        )
+                    } ?: ExifInterface.ORIENTATION_NORMAL
+                }
             }
         } catch (_: Exception) {
             ExifInterface.ORIENTATION_NORMAL
@@ -958,16 +1015,12 @@ object PosterRenderer {
         val tx = (targetWidth - scaledW) / 2f + clampedPanX
         val ty = (targetHeight - scaledH) / 2f + clampedPanY
 
-        val matrix = Matrix().apply {
-            postScale(finalScale, finalScale)
-            postTranslate(tx, ty)
-        }
-
+        val dstRect = RectF(tx, ty, tx + scaledW, ty + scaledH)
         val paint = Paint().apply {
             isAntiAlias = true
             isFilterBitmap = true
         }
-        canvas.drawBitmap(bitmap, matrix, paint)
+        canvas.drawBitmap(bitmap, null, dstRect, paint)
     }
 
     // ==========================================
