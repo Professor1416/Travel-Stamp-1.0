@@ -347,50 +347,10 @@ object PosterRenderer {
             textSize = dateSize
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
-            letterSpacing = 0.10f
+            letterSpacing = 0.12f
         }
         val dateLabel = "━◆ DATE OF EXPEDITION: ${stamp.dateText.uppercase()} ◆━"
         canvas.drawText(dateLabel, width / 2f, currentY, datePaint)
-
-        currentY += when (format) {
-            StampEditionFormat.SQUARE -> 34f
-            StampEditionFormat.PORTRAIT -> 44f
-            StampEditionFormat.STORY -> 48f
-        }
-
-        // D. Stamp Code & Serial Box
-        val serialBoxPaint = Paint().apply {
-            isAntiAlias = true
-            color = accentGold
-            alpha = 140
-            style = Paint.Style.STROKE
-            strokeWidth = 2.5f
-        }
-        val serialBgPaint = Paint().apply {
-            isAntiAlias = true
-            color = AndroidColor.WHITE
-            alpha = 190
-            style = Paint.Style.FILL
-        }
-        val serialTextPaint = Paint().apply {
-            isAntiAlias = true
-            color = inkColorInt
-            textSize = serialSize
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-        }
-        val serialLabel = "AUTHENTICATED TRAVEL STAMP: ${stamp.stampCode}"
-        val sWidth = min(serialTextPaint.measureText(serialLabel) + 50f, maxTextWidth)
-        val sHalfH = serialSize * 0.9f
-        val sRect = RectF(
-            width / 2f - sWidth / 2f,
-            currentY - sHalfH,
-            width / 2f + sWidth / 2f,
-            currentY + sHalfH * 0.6f
-        )
-        canvas.drawRoundRect(sRect, 10f, 10f, serialBgPaint)
-        canvas.drawRoundRect(sRect, 10f, 10f, serialBoxPaint)
-        canvas.drawText(serialLabel, width / 2f, currentY, serialTextPaint)
 
         // 7. Bottom Branding / Watermark
         val footerPaint = Paint().apply {

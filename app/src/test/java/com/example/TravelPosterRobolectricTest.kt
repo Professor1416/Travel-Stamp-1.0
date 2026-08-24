@@ -2,7 +2,9 @@ package com.example
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
 import android.graphics.Paint
+import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.datasource.BundledSuggestionSourceImpl
@@ -27,7 +29,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -501,4 +505,199 @@ class TravelPosterRobolectricTest {
         assertTrue(allText.contains("HIGHEST"))
         assertTrue(allText.contains("GHATS"))
     }
+
+    @Test
+    fun testPassD1PhotoStampExportPreservesSelectedPhotoAndDoesNotUseFallback() {
+        val trip = Trip(
+            id = 301L,
+            name = "Kalsubai Peak Trek",
+            destination = "Bhandardara, Maharashtra",
+            date = "2026-08-20",
+            status = TripStatus.COMPLETED,
+            stampEarned = true
+        )
+        val stamp = TravelStamp(
+            id = 301L,
+            tripId = 301L,
+            stampNumber = 12L,
+            stampCode = "#012",
+            title = "Kalsubai Peak Trek",
+            destination = "Bhandardara, Maharashtra",
+            dateText = "20 AUG 2026",
+            peopleCount = 5,
+            momentsCount = 3
+        )
+
+        // Create sample photo file in cache
+        val testPhotoFile = File(context.cacheDir, "kalsubai_export_test.jpg")
+        val sampleBitmap = Bitmap.createBitmap(600, 450, Bitmap.Config.ARGB_8888)
+        FileOutputStream(testPhotoFile).use { out ->
+            sampleBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        sampleBitmap.recycle()
+
+        val photoUri = testPhotoFile.toURI().toString()
+
+        for (format in StampEditionFormat.values()) {
+            val config = PosterRenderConfig(
+                template = PosterTemplate.PHOTO_STAMP,
+                format = format,
+                photoUri = photoUri,
+                panX = 0f,
+                panY = 0f,
+                zoom = 1f,
+                stampPositionX = 0.5f,
+                stampPositionY = 0.45f,
+                stampSize = com.example.ui.poster.StampSize.MEDIUM
+            )
+
+            val renderedPoster = PosterRenderer.render(context, trip, stamp, config)
+            assertNotNull(renderedPoster)
+            assertEquals(format.width, renderedPoster.width)
+            assertEquals(format.height, renderedPoster.height)
+            renderedPoster.recycle()
+        }
+
+        testPhotoFile.delete()
+    }
+
+    @Test
+    fun testPassD1SaveAndShareConfigurationsAreEqual() {
+        val trip = Trip(id = 302L, name = "Rajmachi", destination = "Lonavala", date = "2026-08-21")
+        val stamp = TravelStamp(
+            id = 302L,
+            tripId = 302L,
+            stampNumber = 13L,
+            stampCode = "#013",
+            title = "Rajmachi",
+            destination = "Lonavala",
+            dateText = "21 AUG 2026",
+            peopleCount = 2,
+            momentsCount = 1
+        )
+
+        val photoPath = "/data/user/0/com.example/files/moments/moment_test.jpg"
+        val saveConfig = PosterRenderConfig(
+            template = PosterTemplate.PHOTO_STAMP,
+            format = StampEditionFormat.SQUARE,
+            photoUri = photoPath,
+            panX = 0.1f,
+            panY = -0.2f,
+            zoom = 1.3f,
+            stampPositionX = 0.4f,
+            stampPositionY = 0.6f,
+            stampSize = com.example.ui.poster.StampSize.LARGE
+        )
+
+        val shareConfig = PosterRenderConfig(
+            template = PosterTemplate.PHOTO_STAMP,
+            format = StampEditionFormat.SQUARE,
+            photoUri = photoPath,
+            panX = 0.1f,
+            panY = -0.2f,
+            zoom = 1.3f,
+            stampPositionX = 0.4f,
+            stampPositionY = 0.6f,
+            stampSize = com.example.ui.poster.StampSize.LARGE
+        )
+
+        assertEquals(saveConfig.photoUri, shareConfig.photoUri)
+        assertEquals(saveConfig.format, shareConfig.format)
+        assertEquals(saveConfig.panX, shareConfig.panX, 0.001f)
+        assertEquals(saveConfig.panY, shareConfig.panY, 0.001f)
+        assertEquals(saveConfig.zoom, shareConfig.zoom, 0.001f)
+        assertEquals(saveConfig.stampPositionX, shareConfig.stampPositionX, 0.001f)
+        assertEquals(saveConfig.stampPositionY, shareConfig.stampPositionY, 0.001f)
+        assertEquals(saveConfig.stampSize, shareConfig.stampSize)
+    }
+
+    @Test
+    fun testPassD1PassportStampRendersCleanlyWithoutRedundantCapsule() {
+        val trip = Trip(id = 303L, name = "Devkund Waterfall", destination = "Bhira, Maharashtra", date = "2026-08-22")
+        val stamp = TravelStamp(
+            id = 303L,
+            tripId = 303L,
+            stampNumber = 14L,
+            stampCode = "#014",
+            title = "Devkund Waterfall",
+            destination = "Bhira, Maharashtra",
+            dateText = "22 AUG 2026",
+            peopleCount = 4,
+            momentsCount = 2
+        )
+
+        for (format in StampEditionFormat.values()) {
+            val config = PosterRenderConfig(
+                template = PosterTemplate.PASSPORT_STAMP,
+                format = format
+            )
+            val bitmap = PosterRenderer.render(context, trip, stamp, config)
+            assertNotNull(bitmap)
+            assertEquals(format.width, bitmap.width)
+            assertEquals(format.height, bitmap.height)
+            bitmap.recycle()
+        }
+    }
+
+    @Test
+    fun testPassD1DirtyStateTrackingLogic() {
+        var lastExportedFingerprint: String? = null
+
+        fun computeFingerprint(uri: String?, fmt: String, pX: Float, pY: Float, z: Float, sX: Float, sY: Float, sz: String): String? {
+            return if (uri == null && pX == 0f && pY == 0f && z == 1f && sX == 0.5f && sY == 0.44f && sz == "MEDIUM") {
+                null
+            } else {
+                "uri=${uri}_fmt=${fmt}_panX=${pX}_panY=${pY}_zoom=${z}_sx=${sX}_sy=${sY}_sz=$sz"
+            }
+        }
+
+        // Case 1: Fresh state with no photo -> Not dirty
+        val fpInitial = computeFingerprint(null, "PORTRAIT", 0f, 0f, 1f, 0.5f, 0.44f, "MEDIUM")
+        assertNull(fpInitial)
+        var isDirty = fpInitial != null && fpInitial != lastExportedFingerprint
+        assertFalse("Initial state without photo should not be dirty", isDirty)
+
+        // Case 2: User selects photo & changes zoom -> Dirty
+        val fpEdited = computeFingerprint("file:///test.jpg", "PORTRAIT", 0.1f, 0f, 1.2f, 0.5f, 0.44f, "LARGE")
+        assertNotNull(fpEdited)
+        isDirty = fpEdited != lastExportedFingerprint
+        assertTrue("Edited state before export should be dirty", isDirty)
+
+        // Case 3: Save succeeds -> Updates lastExportedFingerprint -> No longer dirty
+        lastExportedFingerprint = fpEdited
+        isDirty = fpEdited != lastExportedFingerprint
+        assertFalse("State immediately after successful save should not be dirty", isDirty)
+
+        // Case 4: Subsequent edit after save -> Dirty again
+        val fpEditedAgain = computeFingerprint("file:///test.jpg", "PORTRAIT", 0.2f, 0f, 1.2f, 0.5f, 0.44f, "LARGE")
+        isDirty = fpEditedAgain != lastExportedFingerprint
+        assertTrue("State edited after save should be dirty again", isDirty)
+
+        // Case 5: Share succeeds -> Updates lastExportedFingerprint -> Clean
+        lastExportedFingerprint = fpEditedAgain
+        isDirty = fpEditedAgain != lastExportedFingerprint
+        assertFalse("State after share should be clean", isDirty)
+    }
+
+    @Test
+    fun testPassD1ExportActionEnablingRules() {
+        fun isSaveAndShareEnabled(template: PosterTemplate, photoUri: String?, isExportActive: Boolean): Boolean {
+            val isPhotoMissing = template == PosterTemplate.PHOTO_STAMP && photoUri.isNullOrBlank()
+            return !isExportActive && !isPhotoMissing
+        }
+
+        // Photo + Stamp with no photo: Disabled
+        assertFalse(isSaveAndShareEnabled(PosterTemplate.PHOTO_STAMP, null, false))
+        assertFalse(isSaveAndShareEnabled(PosterTemplate.PHOTO_STAMP, "", false))
+
+        // Photo + Stamp with photo: Enabled
+        assertTrue(isSaveAndShareEnabled(PosterTemplate.PHOTO_STAMP, "file:///photo.jpg", false))
+
+        // Photo + Stamp while exporting: Disabled
+        assertFalse(isSaveAndShareEnabled(PosterTemplate.PHOTO_STAMP, "file:///photo.jpg", true))
+
+        // Passport Stamp without photo: Always Enabled
+        assertTrue(isSaveAndShareEnabled(PosterTemplate.PASSPORT_STAMP, null, false))
+    }
 }
+

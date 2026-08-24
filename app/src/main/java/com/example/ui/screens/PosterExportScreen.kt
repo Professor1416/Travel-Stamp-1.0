@@ -103,6 +103,7 @@ import com.example.ui.poster.PosterRenderConfig
 import com.example.ui.poster.PosterTemplate
 import com.example.ui.poster.StampEditionFormat
 import com.example.ui.poster.StampSize
+import com.example.ui.util.PhotoUtils
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.OchreGold
 import com.example.ui.theme.SandCanvasLight
@@ -200,41 +201,50 @@ fun PosterExportScreen(
     var isSharing by remember { mutableStateOf(false) }
     val isExportActive = isSavingToGallery || isSharing
 
-    // Unsaved changes tracking
-    val hasPhotoEdits = remember(selectedPhotoUri, panX, panY, zoom, stampNormX, stampNormY, selectedStampSize) {
-        selectedPhotoUri != null ||
-                panX != 0f ||
-                panY != 0f ||
-                zoom != 1f ||
-                stampNormX != 0.5f ||
-                stampNormY != 0.44f ||
-                selectedStampSize != StampSize.MEDIUM
+    // Fingerprint snapshot of last successfully exported state
+    var lastExportedFingerprint by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Current state fingerprint for dirty tracking
+    val currentPhotoStampFingerprint = remember(selectedPhotoUri, panX, panY, zoom, stampNormX, stampNormY, selectedStampSize, selectedFormat) {
+        if (selectedPhotoUri == null && panX == 0f && panY == 0f && zoom == 1f && stampNormX == 0.5f && stampNormY == 0.44f && selectedStampSize == StampSize.MEDIUM) {
+            null
+        } else {
+            "uri=${selectedPhotoUri}_fmt=${selectedFormat.name}_panX=$panX _panY=$panY _zoom=$zoom _sx=$stampNormX _sy=$stampNormY _sz=${selectedStampSize.name}"
+        }
+    }
+
+    // Has unsaved/unexported edits
+    val hasUnsavedPhotoEdits = remember(currentPhotoStampFingerprint, lastExportedFingerprint) {
+        if (currentPhotoStampFingerprint == null) {
+            false
+        } else {
+            currentPhotoStampFingerprint != lastExportedFingerprint
+        }
     }
 
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
     // Handle Back action with confirmation if changes were made
     val handleBack = {
-        if (selectedTemplate == PosterTemplate.PHOTO_STAMP && hasPhotoEdits) {
+        if (selectedTemplate == PosterTemplate.PHOTO_STAMP && hasUnsavedPhotoEdits) {
             showDiscardDialog = true
         } else {
             onNavigateBack()
         }
     }
 
-    BackHandler(enabled = selectedTemplate == PosterTemplate.PHOTO_STAMP && hasPhotoEdits) {
+    BackHandler(enabled = selectedTemplate == PosterTemplate.PHOTO_STAMP && hasUnsavedPhotoEdits) {
         showDiscardDialog = true
     }
 
-    // System Photo Picker launcher with error safety
+    // System Photo Picker launcher with permanent internal copy and error safety
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
             try {
-                // Verify URI readability
-                context.contentResolver.openInputStream(uri)?.close()
-                selectedPhotoUri = uri.toString()
+                val permanentPath = PhotoUtils.copyUriToPermanentStorage(context, uri)
+                selectedPhotoUri = permanentPath ?: uri.toString()
                 panX = 0f
                 panY = 0f
                 zoom = 1f
@@ -835,6 +845,7 @@ fun PosterExportScreen(
                                 }
                                 isSavingToGallery = false
                                 if (success) {
+                                    lastExportedFingerprint = currentPhotoStampFingerprint
                                     snackbarHostState.showSnackbar("Stamp saved to gallery")
                                 } else {
                                     snackbarHostState.showSnackbar("Couldn't save stamp. Try again.")
@@ -892,6 +903,7 @@ fun PosterExportScreen(
                                 }
                                 isSharing = false
                                 if (shareUri != null) {
+                                    lastExportedFingerprint = currentPhotoStampFingerprint
                                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                         type = "image/png"
                                         putExtra(Intent.EXTRA_STREAM, shareUri)
@@ -1260,29 +1272,14 @@ private fun ResponsivePosterLivePreview(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Spacer(modifier = Modifier.height(3.dp))
                             Text(
                                 text = "━◆ DATE: ${stamp.dateText.uppercase()} ◆━",
                                 fontSize = 7.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = inkColor.copy(alpha = 0.8f)
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color.White.copy(alpha = 0.7f),
-                                border = BorderStroke(0.8.dp, OchreGold.copy(alpha = 0.6f))
-                            ) {
-                                Text(
-                                    text = "AUTHENTICATED: ${stamp.stampCode}",
-                                    fontSize = 7.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = inkColor,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(3.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "TRAVEL STAMP 🏔️ • OFFICIAL EXPEDITION LOG",
                                 fontSize = 5.5.sp,
