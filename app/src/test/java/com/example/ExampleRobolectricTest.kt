@@ -1681,12 +1681,12 @@ class ExampleRobolectricTest {
         )
         tripRepo.finishTrip(hariharId)
 
-        // 2. Future Expedition (25 Aug 2026) - Upcoming
+        // 2. Future Expedition (25 Dec 2026) - Upcoming
         val futureId = tripRepo.createTrip(
             com.example.data.model.Trip(
                 name = "Future Expedition",
                 destination = "Goa",
-                date = "25 August 2026"
+                date = "25 December 2026"
             )
         )
 
@@ -1726,7 +1726,7 @@ class ExampleRobolectricTest {
         val upcoming = tripRepo.observeUpcomingJourneys().first()
         assertEquals(1, upcoming.size)
         assertEquals("Future Expedition", upcoming[0].name)
-        assertEquals("25 August 2026", upcoming[0].date)
+        assertEquals("25 December 2026", upcoming[0].date)
         assertEquals(TripStatus.UPCOMING, upcoming[0].status)
     }
 

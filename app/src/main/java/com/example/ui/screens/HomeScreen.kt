@@ -24,18 +24,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -68,14 +63,12 @@ import com.example.ui.viewmodel.TravelViewModel
 private const val HOME_COLLECTION_PREVIEW_LIMIT = 4
 private const val RECENT_COMPLETED_PREVIEW_LIMIT = 3
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: TravelViewModel,
     onCreateTripClick: () -> Unit,
     onTripClick: (Long) -> Unit,
     onCollectionClick: () -> Unit,
-    onSettingsClick: () -> Unit,
     onStampClick: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -91,26 +84,6 @@ fun HomeScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = { },
-                actions = {
-                    IconButton(
-                        onClick = onSettingsClick,
-                        modifier = Modifier.testTag("settings_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
-                )
-            )
-        },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         LazyColumn(
@@ -125,7 +98,7 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = Spacing.xs, bottom = Spacing.xs),
+                        .padding(top = Spacing.md, bottom = Spacing.xs),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // Vintage Mountain Stamp Emblem

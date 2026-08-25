@@ -3,7 +3,10 @@ package com.example.ui.navigation
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -14,6 +17,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.ui.poster.PosterTemplate
@@ -66,253 +70,279 @@ fun TravelNavHost(
     val initialOnboardingCompleted = remember { viewModel.hasCompletedOnboarding.value }
     val startDest = if (initialOnboardingCompleted) Destinations.HOME else Destinations.ONBOARDING
 
-    NavHost(
-        navController = navController,
-        startDestination = startDest,
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val rootRoutes = remember { setOf(Destinations.HOME, Destinations.COLLECTION, Destinations.SETTINGS) }
+    val isRootDestination = currentRoute in rootRoutes
+
+    fun navigateToRootTab(targetRoute: String) {
+        if (currentRoute != targetRoute) {
+            navController.navigate(targetRoute) {
+                popUpTo(Destinations.HOME) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
+    Scaffold(
         modifier = modifier.fillMaxSize(),
-        enterTransition = { fadeIn(animationSpec = tween(220)) },
-        exitTransition = { fadeOut(animationSpec = tween(220)) },
-        popEnterTransition = { fadeIn(animationSpec = tween(220)) },
-        popExitTransition = { fadeOut(animationSpec = tween(220)) }
-    ) {
-        composable(Destinations.ONBOARDING) {
-            OnboardingScreen(
-                onFinished = {
-                    viewModel.completeOnboarding()
-                    navController.navigate(Destinations.HOME) {
-                        popUpTo(Destinations.ONBOARDING) { inclusive = true }
+        bottomBar = {
+            if (isRootDestination) {
+                TravelBottomBar(
+                    currentRoute = currentRoute,
+                    onNavigateToTab = { targetRoute ->
+                        navigateToRootTab(targetRoute)
                     }
-                }
-            )
-        }
-
-        composable(Destinations.HOME) {
-            HomeScreen(
-                viewModel = viewModel,
-                onCreateTripClick = {
-                    navController.navigate(Destinations.CREATE_TRIP)
-                },
-                onTripClick = { tripId ->
-                    viewModel.selectTrip(tripId)
-                    navController.navigate(Destinations.tripCard(tripId))
-                },
-                onCollectionClick = {
-                    navController.navigate(Destinations.COLLECTION)
-                },
-                onSettingsClick = {
-                    navController.navigate(Destinations.SETTINGS)
-                },
-                onStampClick = { tripId ->
-                    viewModel.selectTrip(tripId)
-                    navController.navigate(Destinations.travelStamp(tripId))
-                }
-            )
-        }
-
-        composable(Destinations.CREATE_TRIP) {
-            CreateTripScreen(
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onTripCreated = { tripId ->
-                    viewModel.selectTrip(tripId)
-                    navController.navigate(Destinations.tripCard(tripId)) {
-                        popUpTo(Destinations.HOME)
+                )
+            }
+        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { scaffoldPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = startDest,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(scaffoldPadding),
+            enterTransition = { fadeIn(animationSpec = tween(220)) },
+            exitTransition = { fadeOut(animationSpec = tween(220)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(220)) },
+            popExitTransition = { fadeOut(animationSpec = tween(220)) }
+        ) {
+            composable(Destinations.ONBOARDING) {
+                OnboardingScreen(
+                    onFinished = {
+                        viewModel.completeOnboarding()
+                        navController.navigate(Destinations.HOME) {
+                            popUpTo(Destinations.ONBOARDING) { inclusive = true }
+                        }
                     }
-                }
-            )
-        }
-
-        composable(
-            route = Destinations.TRIP_CARD,
-            arguments = listOf(navArgument("tripId") { type = NavType.LongType })
-        ) { backStackEntry ->
-            val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
-            androidx.compose.runtime.LaunchedEffect(tripId) {
-                viewModel.selectTrip(tripId)
+                )
             }
 
-            TripCardScreen(
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onAddMomentClick = { id ->
-                    navController.navigate(Destinations.addMoment(id))
-                },
-                onEditMomentClick = { tripIdParam, momentIdParam ->
-                    navController.navigate(Destinations.editMoment(tripIdParam, momentIdParam))
-                },
-                onFinishTripClick = { id ->
-                    navController.navigate(Destinations.finishTrip(id))
-                },
-                onViewStampClick = { id ->
-                    navController.navigate(Destinations.travelStamp(id))
-                },
-                onCreatePosterClick = { id ->
-                    navController.navigate(Destinations.posterExport(id))
-                }
-            )
-        }
-
-        composable(
-            route = Destinations.ADD_MOMENT,
-            arguments = listOf(navArgument("tripId") { type = NavType.LongType })
-        ) { backStackEntry ->
-            val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
-            AddMomentScreen(
-                tripId = tripId,
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
-        }
-
-        composable(
-            route = Destinations.EDIT_MOMENT,
-            arguments = listOf(
-                navArgument("tripId") { type = NavType.LongType },
-                navArgument("momentId") { type = NavType.LongType }
-            )
-        ) { backStackEntry ->
-            val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
-            val momentId = backStackEntry.arguments?.getLong("momentId") ?: return@composable
-            AddMomentScreen(
-                tripId = tripId,
-                momentId = momentId,
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
-        }
-
-        composable(
-            route = Destinations.FINISH_TRIP,
-            arguments = listOf(navArgument("tripId") { type = NavType.LongType })
-        ) { backStackEntry ->
-            val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
-            FinishTripScreen(
-                tripId = tripId,
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onStampGenerated = { id ->
-                    navController.navigate(Destinations.travelStamp(id)) {
-                        popUpTo(Destinations.TRIP_CARD) { inclusive = true }
+            composable(Destinations.HOME) {
+                HomeScreen(
+                    viewModel = viewModel,
+                    onCreateTripClick = {
+                        navController.navigate(Destinations.CREATE_TRIP)
+                    },
+                    onTripClick = { tripId ->
+                        viewModel.selectTrip(tripId)
+                        navController.navigate(Destinations.tripCard(tripId))
+                    },
+                    onCollectionClick = {
+                        navigateToRootTab(Destinations.COLLECTION)
+                    },
+                    onStampClick = { tripId ->
+                        viewModel.selectTrip(tripId)
+                        navController.navigate(Destinations.travelStamp(tripId))
                     }
-                }
-            )
-        }
-
-        composable(
-            route = Destinations.TRAVEL_STAMP,
-            arguments = listOf(navArgument("tripId") { type = NavType.LongType })
-        ) { backStackEntry ->
-            val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
-            androidx.compose.runtime.LaunchedEffect(tripId) {
-                viewModel.selectTrip(tripId)
+                )
             }
 
-            TravelStampScreen(
-                tripId = tripId,
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onViewTripCard = {
-                    navController.navigate(Destinations.tripCard(tripId))
-                },
-                onCollectionClick = {
-                    navController.navigate(Destinations.COLLECTION) {
-                        popUpTo(Destinations.HOME)
+            composable(Destinations.CREATE_TRIP) {
+                CreateTripScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onTripCreated = { tripId ->
+                        viewModel.selectTrip(tripId)
+                        navController.navigate(Destinations.tripCard(tripId)) {
+                            popUpTo(Destinations.HOME)
+                        }
                     }
-                },
-                onCreatePosterClick = { id ->
-                    navController.navigate(Destinations.posterExport(id))
-                },
-                onCreateEditionClick = { id, format, template ->
-                    navController.navigate(Destinations.posterExport(id, format, template))
-                }
-            )
-        }
-
-        composable(
-            route = Destinations.POSTER_EXPORT,
-            arguments = listOf(
-                navArgument("tripId") { type = NavType.LongType },
-                navArgument("format") {
-                    type = NavType.StringType
-                    defaultValue = "PORTRAIT"
-                },
-                navArgument("template") {
-                    type = NavType.StringType
-                    defaultValue = "PHOTO_STAMP"
-                }
-            )
-        ) { backStackEntry ->
-            val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
-            val formatStr = backStackEntry.arguments?.getString("format") ?: "PORTRAIT"
-            val templateStr = backStackEntry.arguments?.getString("template") ?: "PHOTO_STAMP"
-            val initialFormat = try { StampEditionFormat.valueOf(formatStr) } catch (_: Exception) { StampEditionFormat.PORTRAIT }
-            val initialTemplate = try { PosterTemplate.valueOf(templateStr) } catch (_: Exception) { PosterTemplate.PHOTO_STAMP }
-
-            androidx.compose.runtime.LaunchedEffect(tripId) {
-                viewModel.selectTrip(tripId)
+                )
             }
 
-            PosterExportScreen(
-                tripId = tripId,
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                initialFormat = initialFormat,
-                initialTemplate = initialTemplate
-            )
-        }
-
-        composable(Destinations.COLLECTION) {
-            CollectionScreen(
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onTripClick = { tripId ->
+            composable(
+                route = Destinations.TRIP_CARD,
+                arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                androidx.compose.runtime.LaunchedEffect(tripId) {
                     viewModel.selectTrip(tripId)
-                    navController.navigate(Destinations.tripCard(tripId))
-                },
-                onStampClick = { tripId ->
+                }
+
+                TripCardScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onAddMomentClick = { id ->
+                        navController.navigate(Destinations.addMoment(id))
+                    },
+                    onEditMomentClick = { tripIdParam, momentIdParam ->
+                        navController.navigate(Destinations.editMoment(tripIdParam, momentIdParam))
+                    },
+                    onFinishTripClick = { id ->
+                        navController.navigate(Destinations.finishTrip(id))
+                    },
+                    onViewStampClick = { id ->
+                        navController.navigate(Destinations.travelStamp(id))
+                    },
+                    onCreatePosterClick = { id ->
+                        navController.navigate(Destinations.posterExport(id))
+                    }
+                )
+            }
+
+            composable(
+                route = Destinations.ADD_MOMENT,
+                arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                AddMomentScreen(
+                    tripId = tripId,
+                    viewModel = viewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            composable(
+                route = Destinations.EDIT_MOMENT,
+                arguments = listOf(
+                    navArgument("tripId") { type = NavType.LongType },
+                    navArgument("momentId") { type = NavType.LongType }
+                )
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                val momentId = backStackEntry.arguments?.getLong("momentId") ?: return@composable
+                AddMomentScreen(
+                    tripId = tripId,
+                    momentId = momentId,
+                    viewModel = viewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            composable(
+                route = Destinations.FINISH_TRIP,
+                arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                FinishTripScreen(
+                    tripId = tripId,
+                    viewModel = viewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onStampGenerated = { id ->
+                        navController.navigate(Destinations.travelStamp(id)) {
+                            popUpTo(Destinations.TRIP_CARD) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            composable(
+                route = Destinations.TRAVEL_STAMP,
+                arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                androidx.compose.runtime.LaunchedEffect(tripId) {
                     viewModel.selectTrip(tripId)
-                    navController.navigate(Destinations.travelStamp(tripId))
-                },
-                onCreateTripClick = {
-                    navController.navigate(Destinations.CREATE_TRIP)
                 }
-            )
-        }
 
-        composable(Destinations.SETTINGS) {
-            SettingsScreen(
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onAboutClick = {
-                    navController.navigate(Destinations.ABOUT)
-                }
-            )
-        }
+                TravelStampScreen(
+                    tripId = tripId,
+                    viewModel = viewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onViewTripCard = {
+                        navController.navigate(Destinations.tripCard(tripId))
+                    },
+                    onCollectionClick = {
+                        navigateToRootTab(Destinations.COLLECTION)
+                    },
+                    onCreatePosterClick = { id ->
+                        navController.navigate(Destinations.posterExport(id))
+                    },
+                    onCreateEditionClick = { id, format, template ->
+                        navController.navigate(Destinations.posterExport(id, format, template))
+                    }
+                )
+            }
 
-        composable(Destinations.ABOUT) {
-            AboutScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
+            composable(
+                route = Destinations.POSTER_EXPORT,
+                arguments = listOf(
+                    navArgument("tripId") { type = NavType.LongType },
+                    navArgument("format") {
+                        type = NavType.StringType
+                        defaultValue = "PORTRAIT"
+                    },
+                    navArgument("template") {
+                        type = NavType.StringType
+                        defaultValue = "PHOTO_STAMP"
+                    }
+                )
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                val formatStr = backStackEntry.arguments?.getString("format") ?: "PORTRAIT"
+                val templateStr = backStackEntry.arguments?.getString("template") ?: "PHOTO_STAMP"
+                val initialFormat = try { StampEditionFormat.valueOf(formatStr) } catch (_: Exception) { StampEditionFormat.PORTRAIT }
+                val initialTemplate = try { PosterTemplate.valueOf(templateStr) } catch (_: Exception) { PosterTemplate.PHOTO_STAMP }
+
+                androidx.compose.runtime.LaunchedEffect(tripId) {
+                    viewModel.selectTrip(tripId)
                 }
-            )
+
+                PosterExportScreen(
+                    tripId = tripId,
+                    viewModel = viewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    initialFormat = initialFormat,
+                    initialTemplate = initialTemplate
+                )
+            }
+
+            composable(Destinations.COLLECTION) {
+                CollectionScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = null,
+                    onTripClick = { tripId ->
+                        viewModel.selectTrip(tripId)
+                        navController.navigate(Destinations.tripCard(tripId))
+                    },
+                    onStampClick = { tripId ->
+                        viewModel.selectTrip(tripId)
+                        navController.navigate(Destinations.travelStamp(tripId))
+                    },
+                    onCreateTripClick = {
+                        navController.navigate(Destinations.CREATE_TRIP)
+                    }
+                )
+            }
+
+            composable(Destinations.SETTINGS) {
+                SettingsScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = null,
+                    onAboutClick = {
+                        navController.navigate(Destinations.ABOUT)
+                    }
+                )
+            }
+
+            composable(Destinations.ABOUT) {
+                AboutScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
         }
     }
 }
+

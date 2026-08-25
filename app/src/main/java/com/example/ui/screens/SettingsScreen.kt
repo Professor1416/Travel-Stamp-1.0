@@ -86,7 +86,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     viewModel: TravelViewModel,
-    onNavigateBack: () -> Unit,
+    onNavigateBack: (() -> Unit)? = null,
     onAboutClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -128,14 +128,16 @@ fun SettingsScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.testTag("settings_back_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
+                    if (onNavigateBack != null) {
+                        IconButton(
+                            onClick = onNavigateBack,
+                            modifier = Modifier.testTag("settings_back_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

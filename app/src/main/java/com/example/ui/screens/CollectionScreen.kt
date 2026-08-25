@@ -110,7 +110,7 @@ import java.time.LocalDate
 @Composable
 fun CollectionScreen(
     viewModel: TravelViewModel,
-    onNavigateBack: () -> Unit,
+    onNavigateBack: (() -> Unit)? = null,
     onTripClick: (Long) -> Unit,
     onStampClick: (Long) -> Unit,
     onCreateTripClick: () -> Unit,
@@ -201,14 +201,16 @@ fun CollectionScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.testTag("collection_back_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
+                    if (onNavigateBack != null) {
+                        IconButton(
+                            onClick = onNavigateBack,
+                            modifier = Modifier.testTag("collection_back_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
