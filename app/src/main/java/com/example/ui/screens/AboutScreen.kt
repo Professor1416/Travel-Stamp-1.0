@@ -158,9 +158,9 @@ fun AboutScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Image(
-                            painter = painterResource(id = R.drawable.travel_stamp_symbol),
+                            painter = painterResource(id = R.drawable.ic_splash_logo),
                             contentDescription = "Travel Stamp Logo",
-                            modifier = Modifier.size(76.dp)
+                            modifier = Modifier.size(80.dp)
                         )
                     }
 
