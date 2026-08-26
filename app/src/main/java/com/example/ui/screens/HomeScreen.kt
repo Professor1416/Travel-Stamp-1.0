@@ -6,13 +6,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -84,13 +87,19 @@ fun HomeScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.statusBars
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = Spacing.screenHorizontal),
+                .testTag("home_lazy_column"),
+            contentPadding = PaddingValues(
+                start = Spacing.screenHorizontal,
+                end = Spacing.screenHorizontal,
+                top = innerPadding.calculateTopPadding() + Spacing.sm,
+                bottom = Spacing.lg
+            ),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl)
         ) {
             // 1. App Identity & Tagline
@@ -98,7 +107,7 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = Spacing.md, bottom = Spacing.xs),
+                        .padding(bottom = Spacing.xs),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // Vintage Mountain Stamp Emblem
@@ -419,11 +428,6 @@ fun HomeScreen(
                         }
                     }
                 }
-            }
-
-            // Bottom Spacing
-            item {
-                Spacer(modifier = Modifier.height(Spacing.lg))
             }
         }
     }

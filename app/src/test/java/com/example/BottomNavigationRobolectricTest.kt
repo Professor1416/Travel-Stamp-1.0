@@ -4,11 +4,14 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -354,5 +357,86 @@ class BottomNavigationRobolectricTest {
         // Must be back on Home with bottom bar shown
         composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
         composeTestRule.onNodeWithTag("bottom_nav_home").assertIsSelected()
+    }
+
+    @Test
+    fun `TEST 12 - Recent Journeys can scroll smoothly down to the last item and view all button`() {
+        // Create completed trips
+        val currentTime = System.currentTimeMillis()
+        for (i in 1..4) {
+            val trip = com.example.data.model.Trip(
+                name = "Completed Expedition $i",
+                destination = "Destination $i",
+                date = "2026-08-0$i",
+                description = "Notes for expedition $i",
+                status = com.example.data.model.TripStatus.COMPLETED,
+                stampEarned = true,
+                createdAt = currentTime - (10 - i) * 86400000L,
+                updatedAt = currentTime - (10 - i) * 86400000L,
+                completedAt = currentTime - (10 - i) * 86400000L
+            )
+            val id = kotlinx.coroutines.runBlocking { tripRepo.createTrip(trip) }
+            val completedTrip = trip.copy(
+                id = id,
+                status = com.example.data.model.TripStatus.COMPLETED,
+                stampEarned = true,
+                completedAt = currentTime - (10 - i) * 86400000L
+            )
+            kotlinx.coroutines.runBlocking { tripRepo.updateTrip(completedTrip) }
+            val stamp = com.example.data.model.TravelStamp(
+                tripId = id,
+                stampNumber = i.toLong(),
+                stampCode = "TS-EXP-$i",
+                title = "Completed Expedition $i",
+                destination = "Destination $i",
+                dateText = "2026-08-0$i",
+                peopleCount = 1,
+                momentsCount = 2,
+                issuedAt = currentTime
+            )
+            kotlinx.coroutines.runBlocking { stampRepo.issueStamp(stamp) }
+        }
+
+        vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = userPrefs,
+            database = db,
+            locationSuggestionRepository = suggestionRepo
+        )
+
+        ShadowLooper.idleMainLooper()
+        setupNavHost()
+        composeTestRule.waitUntil(5000) {
+            vm.completedTrips.value.size >= 4
+        }
+        composeTestRule.waitForIdle()
+
+        // Home should display Recent Journeys and View All button
+        composeTestRule.onNodeWithTag("home_lazy_column").performScrollToNode(hasTestTag("view_all_journeys_button"))
+        composeTestRule.onNodeWithTag("view_all_journeys_button").assertIsDisplayed()
+
+        // Persistent bottom bar remains displayed and Home is still selected
+        composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bottom_nav_home").assertIsSelected()
+    }
+
+    @Test
+    fun `TEST 13 - Home screen renders correctly in both Light and Dark theme modes`() {
+        userPrefs.setThemeMode(AppThemeMode.DARK)
+        setupNavHost()
+
+        composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bottom_nav_home").assertIsSelected()
+        composeTestRule.onNodeWithText("TRAVEL STAMP").assertIsDisplayed()
+
+        userPrefs.setThemeMode(AppThemeMode.LIGHT)
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bottom_nav_home").assertIsSelected()
+        composeTestRule.onNodeWithText("TRAVEL STAMP").assertIsDisplayed()
     }
 }
