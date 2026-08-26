@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -42,13 +43,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.R
 import com.example.data.model.Trip
 import com.example.data.util.DateUtils
 import com.example.ui.components.CompactStampBadge
@@ -110,24 +114,15 @@ fun HomeScreen(
                         .padding(bottom = Spacing.xs),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Vintage Mountain Stamp Emblem
-                    Box(
+                    // Authentic Travel Stamp Symbol
+                    Image(
+                        painter = painterResource(id = R.drawable.travel_stamp_symbol),
+                        contentDescription = "Travel Stamp logo",
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .size(72.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(ForestPine, Color(0xFF13221B))
-                                )
-                            )
-                            .border(2.dp, OchreGold.copy(alpha = 0.5f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "🏔️",
-                            fontSize = 32.sp
-                        )
-                    }
+                            .testTag("home_brand_logo")
+                    )
 
                     Spacer(modifier = Modifier.height(Spacing.md))
 

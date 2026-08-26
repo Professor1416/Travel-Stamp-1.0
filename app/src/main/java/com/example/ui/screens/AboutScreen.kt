@@ -58,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -147,32 +148,17 @@ fun AboutScreen(
                         .padding(vertical = 24.dp, horizontal = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Logo Box with Stamp Ring
-                    Box(
+                    // Authentic Master Brand Artwork
+                    Image(
+                        painter = painterResource(id = R.drawable.travel_stamp_master),
+                        contentDescription = "Travel Stamp Logo",
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier
-                            .size(88.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f))
-                            .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape)
-                            .testTag("about_logo"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_splash_logo),
-                            contentDescription = "Travel Stamp Logo",
-                            modifier = Modifier.size(80.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Text(
-                        text = AppInfoConfig.APP_NAME,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        letterSpacing = 0.5.sp
+                            .size(104.dp)
+                            .testTag("about_logo")
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
                         text = "Version ${versionInfo.versionName}",
@@ -296,6 +282,15 @@ fun AboutScreen(
                 )
             ) {
                 Column {
+                    AboutInfoRow(
+                        label = "App Name",
+                        value = AppInfoConfig.APP_NAME,
+                        testTag = "about_app_name_row"
+                    )
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
                     AboutInfoRow(
                         label = "Version",
                         value = versionInfo.versionName,

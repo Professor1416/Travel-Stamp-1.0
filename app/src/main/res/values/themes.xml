@@ -8,8 +8,8 @@
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
         <!-- Forest Pine brand color #1E3A2F for splash window background -->
         <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
-        <!-- Centered approved Travel Stamp Symbol-only logo -->
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <!-- Centered approved Travel Stamp Symbol-only logo (padded splash derivative for balanced 60-70% visible scale) -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/travel_stamp_splash</item>
         <!-- Seamlessly switches to app theme once initialization completes -->
         <item name="postSplashScreenTheme">@style/Theme.MyApplication</item>
         <!-- Status and navigation bars match Forest Pine to prevent white flashes -->

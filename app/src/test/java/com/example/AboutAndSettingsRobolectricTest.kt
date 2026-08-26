@@ -277,7 +277,7 @@ class AboutAndSettingsRobolectricTest {
 
         composeTestRule.onNodeWithTag("about_screen").assertIsDisplayed()
         composeTestRule.onNodeWithTag("about_logo").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Travel Stamp").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("about_tagline").assertIsDisplayed()
     }
 
     @Test
@@ -290,7 +290,7 @@ class AboutAndSettingsRobolectricTest {
 
         composeTestRule.onNodeWithTag("about_screen").assertIsDisplayed()
         composeTestRule.onNodeWithTag("about_logo").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Travel Stamp").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("about_tagline").assertIsDisplayed()
     }
 
     @Test
