@@ -12,13 +12,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -146,14 +149,21 @@ fun SettingsScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.statusBars
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.screenHorizontal),
+                .padding(
+                    PaddingValues(
+                        start = Spacing.screenHorizontal,
+                        end = Spacing.screenHorizontal,
+                        top = innerPadding.calculateTopPadding() + Spacing.sm,
+                        bottom = Spacing.lg
+                    )
+                ),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl)
         ) {
             // Status Banner if any
@@ -489,8 +499,6 @@ fun SettingsScreen(
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(Spacing.xxl))
         }
     }
 

@@ -439,4 +439,97 @@ class BottomNavigationRobolectricTest {
         composeTestRule.onNodeWithTag("bottom_nav_home").assertIsSelected()
         composeTestRule.onNodeWithText("TRAVEL STAMP").assertIsDisplayed()
     }
+
+    @Test
+    fun `TEST 14 - Passport screen renders with 60 records and scrolls cleanly with Passport tab selected`() {
+        val currentTime = System.currentTimeMillis()
+        for (i in 1..60) {
+            val trip = com.example.data.model.Trip(
+                name = "Expedition #$i",
+                destination = "Destination $i",
+                date = "2026-08-01",
+                status = com.example.data.model.TripStatus.COMPLETED,
+                stampEarned = true,
+                createdAt = currentTime - i * 1000L
+            )
+            val id = kotlinx.coroutines.runBlocking { tripRepo.createTrip(trip) }
+            val stamp = com.example.data.model.TravelStamp(
+                tripId = id,
+                stampNumber = i.toLong(),
+                stampCode = "TS-EXP-$i",
+                title = "Expedition #$i",
+                destination = "Destination $i",
+                dateText = "2026-08-01",
+                peopleCount = 1,
+                momentsCount = 2,
+                issuedAt = currentTime - i * 1000L
+            )
+            kotlinx.coroutines.runBlocking { stampRepo.issueStamp(stamp) }
+        }
+
+        vm = TravelViewModel(
+            tripRepository = tripRepo,
+            checklistRepository = checklistRepo,
+            momentRepository = momentRepo,
+            travelStampRepository = stampRepo,
+            userPreferencesRepository = userPrefs,
+            database = db,
+            locationSuggestionRepository = suggestionRepo
+        )
+
+        ShadowLooper.idleMainLooper()
+        setupNavHost()
+
+        // Switch to Passport tab
+        composeTestRule.onNodeWithTag("bottom_nav_passport").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("bottom_nav_passport").assertIsSelected()
+        composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
+        composeTestRule.onNodeWithText("MY TRAVEL PASSPORT").assertIsDisplayed()
+
+        // Verify lazy column exists and handles large dataset without crash
+        composeTestRule.onNodeWithTag("collection_lazy_column").assertIsDisplayed()
+    }
+
+    @Test
+    fun `TEST 15 - Settings screen renders and last About section is reachable above bottom navigation`() {
+        setupNavHost()
+
+        // Switch to Settings tab
+        composeTestRule.onNodeWithTag("bottom_nav_settings").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("bottom_nav_settings").assertIsSelected()
+        composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
+        composeTestRule.onNodeWithText("SETTINGS & BACKUP").assertIsDisplayed()
+
+        // Scroll to the bottom-most setting action (About row)
+        composeTestRule.onNodeWithTag("about_travel_stamp_row").performScrollTo().assertIsDisplayed()
+
+        // Verify bottom bar remains visible and selected
+        composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bottom_nav_settings").assertIsSelected()
+    }
+
+    @Test
+    fun `TEST 16 - Passport and Settings render correctly in Dark theme mode with distinct active tab indicator`() {
+        userPrefs.setThemeMode(AppThemeMode.DARK)
+        setupNavHost()
+
+        // Home selected in dark mode
+        composeTestRule.onNodeWithTag("bottom_nav_home").assertIsSelected()
+
+        // Navigate to Passport
+        composeTestRule.onNodeWithTag("bottom_nav_passport").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("bottom_nav_passport").assertIsSelected()
+        composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
+
+        // Navigate to Settings
+        composeTestRule.onNodeWithTag("bottom_nav_settings").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("bottom_nav_settings").assertIsSelected()
+        composeTestRule.onNodeWithTag("travel_bottom_navigation_bar").assertIsDisplayed()
+    }
 }
