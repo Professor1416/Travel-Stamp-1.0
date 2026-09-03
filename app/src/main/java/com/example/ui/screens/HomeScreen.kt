@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -139,7 +140,7 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(Spacing.xs))
 
                     Text(
-                        text = "“Your journeys. Your memories. Your collection.”",
+                        text = stringResource(R.string.travel_stamp_tagline),
                         style = MaterialTheme.typography.bodyMedium,
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

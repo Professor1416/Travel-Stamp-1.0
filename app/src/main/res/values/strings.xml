@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Travel Stamp</string>
+    <string name="travel_stamp_tagline">Your Journey, Your Memories, Your Collection.</string>
+    <string name="travel_stamp_tagline_multiline">Your Journey,\nYour Memories,\nYour Collection.</string>
 </resources>
