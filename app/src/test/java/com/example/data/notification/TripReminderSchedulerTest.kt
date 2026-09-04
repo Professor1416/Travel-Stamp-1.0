@@ -387,4 +387,25 @@ class TripReminderSchedulerTest {
         assertNotNull(triggerWithLegacy)
         assertEquals(triggerWithoutLegacy, triggerWithLegacy)
     }
+
+    @Test
+    fun `test 19 - positive delay is scheduled with positive initial delay rather than immediately runnable`() {
+        val trip = Trip(
+            id = 119L,
+            name = "Delayed Trek",
+            destination = "Dest",
+            date = futureDateStr,
+            startTimeMinutes = 600,
+            reminderEnabled = true,
+            reminderPreset = TripReminderPreset.ONE_DAY_BEFORE
+        )
+        val triggerAt = Instant.now().plusSeconds(3600)
+        val delayMillis = 3600_000L
+
+        val workRequest = scheduler.buildWorkRequest(trip, triggerAt, delayMillis)
+
+        // WorkSpec initialDelay must be positive (3600_000 ms) and not 0 ms catch-up
+        assertTrue(workRequest.workSpec.initialDelay > 0L)
+        assertEquals(delayMillis, workRequest.workSpec.initialDelay)
+    }
 }
