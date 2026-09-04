@@ -2,6 +2,7 @@ package com.example
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -344,5 +345,53 @@ class OnboardingRobolectricTest {
         composeTestRule.waitForIdle()
 
         assertTrue("Callback should be invoked without requiring any database/repository state", callbackInvoked)
+    }
+
+    /**
+     * TEST 11 — SINGLE ARROW CTA REGRESSION
+     * Verifies that the CTA button on each page renders exactly one arrow:
+     * - Page 1: "NEXT →" (no duplicate arrow "NEXT → →")
+     * - Page 2: "NEXT →" (no duplicate arrow "NEXT → →")
+     * - Page 3: "START EXPLORING →" (no duplicate arrow "START EXPLORING → →")
+     */
+    @Test
+    fun test11_singleArrowCtaRegression() {
+        composeTestRule.setContent {
+            MyApplicationTheme {
+                OnboardingScreen(onFinished = {})
+            }
+        }
+
+        // --- PAGE 1 ---
+        val page1Cta = composeTestRule.onNodeWithTag("onboarding_get_started_button")
+        page1Cta.assertIsDisplayed()
+        page1Cta.assertTextEquals("NEXT →")
+        composeTestRule.onNodeWithText("NEXT → →", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("NEXT >>", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("NEXT >", substring = true).assertDoesNotExist()
+
+        // Page 1 -> Page 2
+        page1Cta.performClick()
+        composeTestRule.waitForIdle()
+
+        // --- PAGE 2 ---
+        val page2Cta = composeTestRule.onNodeWithTag("onboarding_next_button")
+        page2Cta.assertIsDisplayed()
+        page2Cta.assertTextEquals("NEXT →")
+        composeTestRule.onNodeWithText("NEXT → →", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("NEXT >>", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("NEXT >", substring = true).assertDoesNotExist()
+
+        // Page 2 -> Page 3
+        page2Cta.performClick()
+        composeTestRule.waitForIdle()
+
+        // --- PAGE 3 ---
+        val page3Cta = composeTestRule.onNodeWithTag("onboarding_start_exploring_button")
+        page3Cta.assertIsDisplayed()
+        page3Cta.assertTextEquals("START EXPLORING →")
+        composeTestRule.onNodeWithText("START EXPLORING → →", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("START EXPLORING >>", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("START EXPLORING >", substring = true).assertDoesNotExist()
     }
 }

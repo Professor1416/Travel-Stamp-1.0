@@ -47,5 +47,7 @@ class TripReminderWorker(
 
     companion object {
         const val KEY_TRIP_ID = "key_trip_id"
+        const val KEY_REMINDER_PRESET = "key_reminder_preset"
+        const val KEY_TRIGGER_AT = "key_trigger_at"
     }
 }

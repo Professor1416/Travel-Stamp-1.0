@@ -199,6 +199,7 @@ class TripReminderRobolectricTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun `TEST 5 - Reminder scheduler calculates correct trigger time for presets`() {
         val futureDate = LocalDate.now().plusDays(10).format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH))
 
