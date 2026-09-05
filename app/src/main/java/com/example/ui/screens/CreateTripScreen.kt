@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.R
 import com.example.data.model.LocationSuggestion
 import com.example.data.model.TripReminderPreset
 import com.example.data.util.DateUtils
@@ -91,6 +92,8 @@ import com.example.ui.components.Spacing
 import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.permission.NotificationPermissionDialogHost
 import com.example.ui.permission.rememberNotificationPermissionController
+import com.example.ui.reminder.JourneyReminderSection
+import com.example.ui.reminder.validateReminderForm
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
@@ -125,6 +128,15 @@ fun CreateTripScreen(
     var reminderEnabled by remember { mutableStateOf(false) } // Default OFF per product decision
     var reminderPreset by remember { mutableStateOf(TripReminderPreset.ONE_DAY_BEFORE) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val reminderValidation = remember(reminderEnabled, tripDate, startTimeMinutes, reminderPreset) {
+        validateReminderForm(
+            reminderEnabled = reminderEnabled,
+            tripDate = tripDate,
+            startTimeMinutes = startTimeMinutes,
+            preset = reminderPreset
+        )
+    }
 
     val permissionController = rememberNotificationPermissionController()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -653,144 +665,29 @@ fun CreateTripScreen(
 
             // GROUP 2: PRE-TRIP REMINDER NOTIFICATIONS (OPTIONAL)
             item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("reminder_section_card"),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.cardPadding),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    imageVector = if (reminderEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
-                                    contentDescription = null,
-                                    tint = if (reminderEnabled) ForestPine else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(Spacing.sm))
-                                Column {
-                                    Text(
-                                        text = "Journey Reminder",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = if (reminderEnabled) "Notification active before trip" else "Disabled (Default)",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            Switch(
-                                checked = reminderEnabled,
-                                onCheckedChange = { isChecked ->
-                                    if (isChecked) {
-                                        permissionController.requestPermission {
-                                            reminderEnabled = true
-                                        }
-                                    } else {
-                                        reminderEnabled = false
-                                    }
-                                },
-                                modifier = Modifier.testTag("reminder_enable_switch"),
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = ForestPine
-                                )
-                            )
+                JourneyReminderSection(
+                    reminderEnabled = reminderEnabled,
+                    onReminderEnabledChange = { enabled ->
+                        reminderEnabled = enabled
+                        if (enabled) {
+                            reminderPreset = TripReminderPreset.ONE_DAY_BEFORE
                         }
-
-                        AnimatedVisibility(
-                            visible = reminderEnabled,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = Spacing.xs),
-                                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
-                            ) {
-                                Text(
-                                    text = "CHOOSE REMINDER TIMING",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    letterSpacing = 0.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-
-                                TripReminderPreset.entries.forEach { preset ->
-                                    val isSelected = reminderPreset == preset
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { reminderPreset = preset }
-                                            .testTag("reminder_preset_${preset.name}")
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            RadioButton(
-                                                selected = isSelected,
-                                                onClick = { reminderPreset = preset },
-                                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
-                                            )
-                                            Spacer(modifier = Modifier.width(Spacing.xs))
-                                            Column {
-                                                Text(
-                                                    text = preset.displayName,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = preset.descriptionText,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontSize = 12.sp
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Text(
-                                    text = "🔒 100% offline & battery-friendly • Tapping the reminder opens this trip directly",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(top = Spacing.xs)
-                                )
-                            }
-                        }
-                    }
-                }
+                    },
+                    selectedPreset = reminderPreset,
+                    onPresetSelected = { preset ->
+                        reminderPreset = preset
+                    },
+                    validationResult = reminderValidation,
+                    onRequestPermission = { onGranted ->
+                        permissionController.requestPermission(onGranted)
+                    },
+                    containerTestTag = "reminder_section_container",
+                    switchTestTag = "reminder_enable_switch",
+                    presetSelectorTestTag = "reminder_preset_selector",
+                    dropdownItemTagPrefix = "reminder_preset_dropdown_item_",
+                    helperTextTestTag = "reminder_helper_text",
+                    validationErrorTestTag = "reminder_validation_error"
+                )
             }
 
             // GROUP 3: EXPEDITION DETAILS
@@ -946,6 +843,12 @@ fun CreateTripScreen(
                         }
                         if (trimmedDest.isBlank()) {
                             errorMessage = "Please provide a location/destination."
+                            return@TravelPrimaryButton
+                        }
+
+                        if (reminderEnabled && !reminderValidation.isValid) {
+                            errorMessage = reminderValidation.errorMessageResId?.let { context.getString(it) }
+                                ?: context.getString(R.string.journey_reminder_time_passed)
                             return@TravelPrimaryButton
                         }
 

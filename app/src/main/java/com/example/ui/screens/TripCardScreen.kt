@@ -98,6 +98,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.R
 import com.example.data.model.MomentCategory
 import com.example.data.model.TripReminderPreset
 import com.example.data.model.TripStatus
@@ -115,6 +116,8 @@ import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.components.TripCardTicket
 import com.example.ui.permission.NotificationPermissionDialogHost
 import com.example.ui.permission.rememberNotificationPermissionController
+import com.example.ui.reminder.JourneyReminderSection
+import com.example.ui.reminder.validateReminderForm
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
@@ -388,7 +391,8 @@ fun TripCardScreen(
             }
 
             // 3. Pre-Trip Reminder Section (for upcoming & in-progress journeys)
-            if (currentTrip.status != TripStatus.COMPLETED) {
+            val isTripCompletedOrStamped = currentTrip.status == TripStatus.COMPLETED || currentTrip.stampEarned || currentTrip.completedAt != null
+            if (!isTripCompletedOrStamped) {
                 item {
                     Card(
                         modifier = Modifier
@@ -954,65 +958,42 @@ fun TripCardScreen(
                         shape = RoundedCornerShape(10.dp)
                     )
 
-                    // Reminder Setting in Edit Trip Dialog
-                    if (currentTrip.status != TripStatus.COMPLETED) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(Spacing.sm),
-                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Pre-Trip Reminder",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Switch(
-                                        checked = editReminderEnabled,
-                                        onCheckedChange = { isChecked ->
-                                            if (isChecked) {
-                                                permissionController.requestPermission {
-                                                    editReminderEnabled = true
-                                                }
-                                            } else {
-                                                editReminderEnabled = false
-                                            }
-                                        },
-                                        modifier = Modifier.testTag("edit_trip_reminder_switch")
-                                    )
-                                }
-                                if (editReminderEnabled) {
-                                    LazyRow(
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        items(TripReminderPreset.entries) { preset ->
-                                            val isSel = editReminderPreset == preset
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                                                modifier = Modifier.clickable { editReminderPreset = preset }
-                                            ) {
-                                                Text(
-                                                    text = preset.displayName,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                    // Reminder Setting in Edit Trip Dialog (N6.2)
+                    val isEditTripCompletedOrStamped = currentTrip.status == TripStatus.COMPLETED || currentTrip.stampEarned || currentTrip.completedAt != null
+                    if (!isEditTripCompletedOrStamped) {
+                        val editReminderValidation = remember(editReminderEnabled, editDate, editStartTimeMinutes, editReminderPreset) {
+                            validateReminderForm(
+                                reminderEnabled = editReminderEnabled,
+                                tripDate = editDate,
+                                startTimeMinutes = editStartTimeMinutes,
+                                preset = editReminderPreset
+                            )
                         }
+
+                        JourneyReminderSection(
+                            reminderEnabled = editReminderEnabled,
+                            onReminderEnabledChange = { enabled ->
+                                editReminderEnabled = enabled
+                                if (enabled) {
+                                    editReminderPreset = TripReminderPreset.ONE_DAY_BEFORE
+                                }
+                            },
+                            selectedPreset = editReminderPreset,
+                            onPresetSelected = { preset ->
+                                editReminderPreset = preset
+                            },
+                            validationResult = editReminderValidation,
+                            onRequestPermission = { onGranted ->
+                                permissionController.requestPermission(onGranted)
+                            },
+                            containerTestTag = "edit_trip_reminder_section",
+                            switchTestTag = "edit_trip_reminder_switch",
+                            presetSelectorTestTag = "edit_trip_reminder_preset_selector",
+                            dropdownItemTagPrefix = "reminder_preset_dropdown_item_",
+                            helperTextTestTag = "reminder_helper_text",
+                            validationErrorTestTag = "edit_trip_reminder_validation_error",
+                            isCardContainer = false
+                        )
                     }
 
                     OutlinedTextField(
@@ -1045,6 +1026,20 @@ fun TripCardScreen(
                         if (editDestination.isBlank()) {
                             editError = "Destination cannot be empty"
                             return@Button
+                        }
+                        val isEditTripCompletedOrStamped = currentTrip.status == TripStatus.COMPLETED || currentTrip.stampEarned || currentTrip.completedAt != null
+                        if (!isEditTripCompletedOrStamped && editReminderEnabled) {
+                            val validation = validateReminderForm(
+                                reminderEnabled = editReminderEnabled,
+                                tripDate = editDate,
+                                startTimeMinutes = editStartTimeMinutes,
+                                preset = editReminderPreset
+                            )
+                            if (!validation.isValid) {
+                                editError = validation.errorMessageResId?.let { context.getString(it) }
+                                    ?: context.getString(R.string.journey_reminder_time_passed)
+                                return@Button
+                            }
                         }
                         val count = editPeopleCount.toIntOrNull() ?: currentTrip.peopleCount
                         viewModel.updateTripDetails(

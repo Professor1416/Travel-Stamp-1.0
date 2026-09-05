@@ -10,4 +10,23 @@
     <string name="notification_permission_not_now">Not now</string>
     <string name="notification_permission_denied">Notifications are off. Allow notifications to use journey reminders.</string>
     <string name="notification_permission_open_settings">Open Settings</string>
+
+    <!-- Journey Reminder UX (N6.2) -->
+    <string name="journey_reminder_title">Journey Reminder</string>
+    <string name="journey_reminder_status_active">Scheduled before journey</string>
+    <string name="journey_reminder_status_off">Disabled</string>
+    <string name="journey_reminder_optional">Optional — get one reminder before this journey.</string>
+    <string name="journey_reminder_remind_me">Remind me</string>
+    <string name="journey_reminder_one_week">One week before</string>
+    <string name="journey_reminder_one_day">One day before</string>
+    <string name="journey_reminder_morning">Morning of</string>
+    <string name="journey_reminder_two_hours">Two hours before</string>
+    <string name="journey_reminder_requires_start_time">Add a journey start time to use this reminder.</string>
+    <string name="journey_reminder_time_passed">This reminder time has already passed. Choose another reminder.</string>
+
+    <!-- Helper copy under presets (Section 5) -->
+    <string name="journey_reminder_helper_one_week">Useful for early preparation.</string>
+    <string name="journey_reminder_helper_one_day">A reminder before tomorrow\'s journey.</string>
+    <string name="journey_reminder_helper_morning">Usually at 7:00 AM, or one hour before an early departure.</string>
+    <string name="journey_reminder_helper_two_hours">Requires a journey start time.</string>
 </resources>
