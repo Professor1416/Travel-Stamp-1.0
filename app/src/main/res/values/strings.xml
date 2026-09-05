@@ -2,4 +2,12 @@
     <string name="app_name">Travel Stamp</string>
     <string name="travel_stamp_tagline">Your Journey, Your Memories, Your Collection.</string>
     <string name="travel_stamp_tagline_multiline">Your Journey,\nYour Memories,\nYour Collection.</string>
+
+    <!-- Notification Permission UX (N6.1) -->
+    <string name="notification_permission_title">Allow journey reminders?</string>
+    <string name="notification_permission_message">Travel Stamp uses notifications to remind you before upcoming journeys. You can change this anytime in Settings.</string>
+    <string name="notification_permission_continue">Continue</string>
+    <string name="notification_permission_not_now">Not now</string>
+    <string name="notification_permission_denied">Notifications are off. Allow notifications to use journey reminders.</string>
+    <string name="notification_permission_open_settings">Open Settings</string>
 </resources>

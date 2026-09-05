@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Outer Circular Stamp Frame (monochrome silhouette for status-bar notification) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,2 C17.52,2 22,6.48 22,12 C22,17.52 17.52,22 12,22 C6.48,22 2,17.52 2,12 C2,6.48 6.48,2 12,2 Z M12,4 C7.58,4 4,7.58 4,12 C4,16.42 7.58,20 12,20 C16.42,20 20,16.42 20,12 C20,7.58 16.42,4 12,4 Z" />
+
+    <!-- Mountain Peaks Silhouette -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M5.5,16.5 L9.5,11.5 L12.5,14.5 L15.5,9.5 L19,15.5 C17.2,18.3 14.8,20 12,20 C9.2,20 6.8,18.3 5.5,16.5 Z" />
+
+    <!-- Rising Sun Disc -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M8.5,6.5 A1.5,1.5 0 1,0 8.5,9.5 A1.5,1.5 0 1,0 8.5,6.5 Z" />
+</vector>

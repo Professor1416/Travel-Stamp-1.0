@@ -70,10 +70,39 @@ fun TravelNavHost(
     val initialOnboardingCompleted = remember { viewModel.hasCompletedOnboarding.value }
     val startDest = if (initialOnboardingCompleted) Destinations.HOME else Destinations.ONBOARDING
 
+    val hasCompletedOnboarding by viewModel.hasCompletedOnboarding.collectAsStateWithLifecycle()
+    val pendingReminderTripId by viewModel.pendingReminderTripId.collectAsStateWithLifecycle()
+
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val rootRoutes = remember { setOf(Destinations.HOME, Destinations.COLLECTION, Destinations.SETTINGS) }
     val isRootDestination = currentRoute in rootRoutes
+
+    LaunchedEffect(pendingReminderTripId, hasCompletedOnboarding, currentRoute) {
+        val targetTripId = pendingReminderTripId
+        if (currentRoute != null && hasCompletedOnboarding && targetTripId != null) {
+            val isValid = viewModel.validateTripForNavigation(targetTripId)
+            if (isValid) {
+                viewModel.selectTrip(targetTripId)
+                val currentTripCardRoute = Destinations.tripCard(targetTripId)
+                val currentTripIdArg = navBackStackEntry?.arguments?.getLong("tripId")
+
+                if (currentRoute != Destinations.TRIP_CARD || currentTripIdArg != targetTripId) {
+                    try {
+                        navController.navigate(currentTripCardRoute) {
+                            popUpTo(Destinations.HOME) {
+                                inclusive = false
+                            }
+                            launchSingleTop = true
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+            viewModel.clearPendingReminderTripId()
+        }
+    }
 
     fun navigateToRootTab(targetRoute: String) {
         if (currentRoute != targetRoute) {

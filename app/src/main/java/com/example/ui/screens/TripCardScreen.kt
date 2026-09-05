@@ -66,6 +66,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -111,6 +113,8 @@ import com.example.ui.components.TravelConfirmationDialog
 import com.example.ui.components.TravelOutlinedButton
 import com.example.ui.components.TravelPrimaryButton
 import com.example.ui.components.TripCardTicket
+import com.example.ui.permission.NotificationPermissionDialogHost
+import com.example.ui.permission.rememberNotificationPermissionController
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
@@ -141,10 +145,15 @@ fun TripCardScreen(
 
     var isInitialLoading by remember(viewModel.selectedTripId.value) { mutableStateOf(true) }
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { _ -> }
-    )
+    val permissionController = rememberNotificationPermissionController()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(permissionController.feedbackMessage) {
+        permissionController.feedbackMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            permissionController.clearFeedbackMessage()
+        }
+    }
 
     LaunchedEffect(viewModel.selectedTripId.value, trip) {
         if (trip != null) {
@@ -325,6 +334,7 @@ fun TripCardScreen(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         LazyColumn(
@@ -434,20 +444,21 @@ fun TripCardScreen(
                                 Switch(
                                     checked = currentTrip.reminderEnabled,
                                     onCheckedChange = { isChecked ->
-                                        if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                            if (ContextCompat.checkSelfPermission(
-                                                    context,
-                                                    Manifest.permission.POST_NOTIFICATIONS
-                                                ) != PackageManager.PERMISSION_GRANTED
-                                            ) {
-                                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        if (isChecked) {
+                                            permissionController.requestPermission {
+                                                viewModel.toggleTripReminder(
+                                                    tripId = currentTrip.id,
+                                                    enabled = true,
+                                                    preset = currentTrip.reminderPreset
+                                                )
                                             }
+                                        } else {
+                                            viewModel.toggleTripReminder(
+                                                tripId = currentTrip.id,
+                                                enabled = false,
+                                                preset = currentTrip.reminderPreset
+                                            )
                                         }
-                                        viewModel.toggleTripReminder(
-                                            tripId = currentTrip.id,
-                                            enabled = isChecked,
-                                            preset = currentTrip.reminderPreset
-                                        )
                                     },
                                     modifier = Modifier.testTag("trip_reminder_switch"),
                                     colors = SwitchDefaults.colors(
@@ -966,7 +977,15 @@ fun TripCardScreen(
                                     )
                                     Switch(
                                         checked = editReminderEnabled,
-                                        onCheckedChange = { editReminderEnabled = it },
+                                        onCheckedChange = { isChecked ->
+                                            if (isChecked) {
+                                                permissionController.requestPermission {
+                                                    editReminderEnabled = true
+                                                }
+                                            } else {
+                                                editReminderEnabled = false
+                                            }
+                                        },
                                         modifier = Modifier.testTag("edit_trip_reminder_switch")
                                     )
                                 }
@@ -1306,4 +1325,6 @@ fun TripCardScreen(
             )
         }
     }
+
+    NotificationPermissionDialogHost(controller = permissionController)
 }

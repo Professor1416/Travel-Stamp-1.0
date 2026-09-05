@@ -207,8 +207,28 @@ class TravelViewModel(
         userPreferencesRepository.setPreTripRemindersEnabled(enabled)
     }
 
-    fun selectTrip(tripId: Long) {
+    fun selectTrip(tripId: Long?) {
         _selectedTripId.value = tripId
+    }
+
+    // Reminder Deep-Link Navigation State
+    private val _pendingReminderTripId = MutableStateFlow<Long?>(null)
+    val pendingReminderTripId: StateFlow<Long?> = _pendingReminderTripId.asStateFlow()
+
+    fun onReminderNavigationRequested(tripId: Long) {
+        if (tripId > 0L) {
+            _pendingReminderTripId.value = tripId
+        }
+    }
+
+    fun clearPendingReminderTripId() {
+        _pendingReminderTripId.value = null
+    }
+
+    suspend fun validateTripForNavigation(tripId: Long): Boolean {
+        if (tripId <= 0L) return false
+        val trip = tripRepository.getTripByIdSync(tripId)
+        return trip != null && trip.deletedAt == null
     }
 
     fun createTrip(

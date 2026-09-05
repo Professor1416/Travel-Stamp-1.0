@@ -22,6 +22,7 @@ object TripNotificationHelper {
     const val CHANNEL_DESCRIPTION = "Pre-trip preparation and packing reminders for upcoming expeditions"
 
     const val EXTRA_TRIP_ID = "extra_trip_id"
+    const val EXTRA_OPEN_TRIP_FROM_REMINDER = "extra_open_trip_from_reminder"
 
     fun ensureNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -33,7 +34,7 @@ object TripNotificationHelper {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_HIGH
+                    NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
                     description = CHANNEL_DESCRIPTION
                     enableLights(true)
@@ -63,25 +64,24 @@ object TripNotificationHelper {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_TRIP_ID, trip.id)
+            putExtra(EXTRA_OPEN_TRIP_FROM_REMINDER, true)
         }
 
         val pendingIntent = PendingIntent.getActivity(
             context,
-            trip.id.toInt(),
+            trip.id.hashCode(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val formattedDateTime = DateUtils.formatTripDateWithTime(trip.date, trip.startTimeMinutes)
-        val title = "Upcoming Journey: ${trip.name}"
-        val content = "Heading to ${trip.destination} on $formattedDateTime. Check your packing list & trail notes!"
+        val copy = ReminderCopyProvider.create(trip)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setSmallIcon(R.drawable.ic_notification_travel_stamp)
+            .setContentTitle(copy.title)
+            .setContentText(copy.body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(copy.body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()

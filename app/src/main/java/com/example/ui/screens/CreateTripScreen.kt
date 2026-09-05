@@ -54,6 +54,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -62,6 +64,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +89,8 @@ import com.example.data.util.DateUtils
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelPrimaryButton
+import com.example.ui.permission.NotificationPermissionDialogHost
+import com.example.ui.permission.rememberNotificationPermissionController
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.Terracotta
 import com.example.ui.viewmodel.TravelViewModel
@@ -121,10 +126,15 @@ fun CreateTripScreen(
     var reminderPreset by remember { mutableStateOf(TripReminderPreset.ONE_DAY_BEFORE) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { _ -> }
-    )
+    val permissionController = rememberNotificationPermissionController()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(permissionController.feedbackMessage) {
+        permissionController.feedbackMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            permissionController.clearFeedbackMessage()
+        }
+    }
 
     val inspirationChips = listOf(
         "Harihar Fort" to "Nashik, Maharashtra",
@@ -178,6 +188,7 @@ fun CreateTripScreen(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         LazyColumn(
@@ -693,15 +704,12 @@ fun CreateTripScreen(
                             Switch(
                                 checked = reminderEnabled,
                                 onCheckedChange = { isChecked ->
-                                    reminderEnabled = isChecked
-                                    if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        if (ContextCompat.checkSelfPermission(
-                                                context,
-                                                Manifest.permission.POST_NOTIFICATIONS
-                                            ) != PackageManager.PERMISSION_GRANTED
-                                        ) {
-                                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    if (isChecked) {
+                                        permissionController.requestPermission {
+                                            reminderEnabled = true
                                         }
+                                    } else {
+                                        reminderEnabled = false
                                     }
                                 },
                                 modifier = Modifier.testTag("reminder_enable_switch"),
@@ -963,6 +971,8 @@ fun CreateTripScreen(
                 Spacer(modifier = Modifier.height(Spacing.lg))
             }
         }
+
+        NotificationPermissionDialogHost(controller = permissionController)
     }
 }
 
