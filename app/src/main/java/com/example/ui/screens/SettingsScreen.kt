@@ -59,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,16 +72,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.R
 import com.example.data.local.AppThemeMode
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.Spacing
 import com.example.ui.components.TravelConfirmationDialog
 import com.example.ui.components.TravelOutlinedButton
 import com.example.ui.components.TravelPrimaryButton
+import com.example.ui.permission.NotificationPermissionDialogHost
+import com.example.ui.permission.rememberNotificationPermissionController
 import com.example.ui.theme.ForestPine
 import com.example.ui.viewmodel.TravelViewModel
 import kotlinx.coroutines.launch
@@ -99,6 +104,15 @@ fun SettingsScreen(
 
     val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val preTripRemindersEnabled by viewModel.preTripRemindersEnabled.collectAsStateWithLifecycle()
+
+    val permissionController = rememberNotificationPermissionController()
+
+    LaunchedEffect(permissionController.feedbackMessage) {
+        val message = permissionController.feedbackMessage
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+        }
+    }
 
     var isExporting by remember { mutableStateOf(false) }
     var isImporting by remember { mutableStateOf(false) }
@@ -289,15 +303,21 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(14.dp))
                             Column {
                                 Text(
-                                    text = "Pre-Trip Reminders",
+                                    text = stringResource(R.string.journey_reminders_global_title),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.testTag("journey_reminders_title")
                                 )
                                 Text(
-                                    text = if (preTripRemindersEnabled) "Reminders active for planned trips" else "All expedition reminders paused",
+                                    text = if (preTripRemindersEnabled) {
+                                        stringResource(R.string.journey_reminders_global_on_description)
+                                    } else {
+                                        stringResource(R.string.journey_reminders_global_off_description)
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.testTag("journey_reminders_description")
                                 )
                             }
                         }
@@ -305,7 +325,29 @@ fun SettingsScreen(
                         Switch(
                             checked = preTripRemindersEnabled,
                             onCheckedChange = { enabled ->
-                                viewModel.setPreTripRemindersEnabled(enabled)
+                                if (enabled) {
+                                    permissionController.requestPermission {
+                                        viewModel.setPreTripRemindersEnabled(true) { error ->
+                                            if (error != null) {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        context.getString(R.string.journey_reminders_update_failed)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    viewModel.setPreTripRemindersEnabled(false) { error ->
+                                        if (error != null) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    context.getString(R.string.journey_reminders_update_failed)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             },
                             modifier = Modifier.testTag("pre_trip_reminders_switch"),
                             colors = SwitchDefaults.colors(
@@ -531,6 +573,8 @@ fun SettingsScreen(
             }
         )
     }
+
+    NotificationPermissionDialogHost(controller = permissionController)
 }
 
 private fun openNotificationSettings(context: Context) {

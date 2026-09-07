@@ -141,7 +141,7 @@ class AboutAndSettingsRobolectricTest {
         composeTestRule.onNodeWithTag("pre_trip_reminders_toggle_row").assertExists()
         composeTestRule.onNodeWithTag("pre_trip_reminders_switch").assertExists()
         composeTestRule.onNodeWithTag("open_notification_settings_row").assertExists()
-        composeTestRule.onNodeWithText("Pre-Trip Reminders").assertExists()
+        composeTestRule.onNodeWithText("Journey Reminders").assertExists()
         composeTestRule.onNodeWithText("Notification Settings").assertExists()
     }
 

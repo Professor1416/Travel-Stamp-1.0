@@ -16,8 +16,11 @@ import java.util.concurrent.TimeUnit
 interface TripReminderScheduler {
     fun scheduleReminder(trip: Trip)
     fun cancelReminder(tripId: Long)
+    fun cancelAllReminders()
 
     companion object {
+        const val TAG_REMINDER_WORK = "trip_reminder"
+
         fun getUniqueWorkName(tripId: Long): String = "trip_reminder_$tripId"
 
         @Deprecated("Use ReminderScheduleCalculator.calculate() instead", ReplaceWith("ReminderScheduleCalculator"))
@@ -120,7 +123,7 @@ class TripReminderSchedulerImpl(
         return OneTimeWorkRequestBuilder<TripReminderWorker>()
             .setInputData(inputData)
             .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
-            .addTag("trip_reminder")
+            .addTag(TripReminderScheduler.TAG_REMINDER_WORK)
             .addTag("trip_${trip.id}")
             .build()
     }
@@ -128,5 +131,9 @@ class TripReminderSchedulerImpl(
     override fun cancelReminder(tripId: Long) {
         val uniqueWorkName = TripReminderScheduler.getUniqueWorkName(tripId)
         workManager.cancelUniqueWork(uniqueWorkName)
+    }
+
+    override fun cancelAllReminders() {
+        workManager.cancelAllWorkByTag(TripReminderScheduler.TAG_REMINDER_WORK)
     }
 }

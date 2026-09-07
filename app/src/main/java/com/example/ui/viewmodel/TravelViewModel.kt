@@ -22,6 +22,7 @@ import com.example.data.model.TravelStamp
 import com.example.data.model.Trip
 import com.example.data.model.TripReminderPreset
 import com.example.data.model.TripStatus
+import com.example.data.notification.ReminderCoordinator
 import com.example.data.repository.ChecklistRepository
 import com.example.data.repository.LocationSuggestionRepository
 import com.example.data.repository.LocationSuggestionRepositoryImpl
@@ -61,7 +62,8 @@ class TravelViewModel(
     private val travelStampRepository: TravelStampRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val database: TravelStampDatabase,
-    private val locationSuggestionRepository: LocationSuggestionRepository = LocationSuggestionRepositoryImpl(tripRepository)
+    private val locationSuggestionRepository: LocationSuggestionRepository = LocationSuggestionRepositoryImpl(tripRepository),
+    private val reminderCoordinator: ReminderCoordinator? = null
 ) : ViewModel() {
 
     val hasCompletedOnboarding: StateFlow<Boolean> = userPreferencesRepository.hasCompletedOnboarding
@@ -203,8 +205,20 @@ class TravelViewModel(
         userPreferencesRepository.setThemeMode(mode)
     }
 
-    fun setPreTripRemindersEnabled(enabled: Boolean) {
-        userPreferencesRepository.setPreTripRemindersEnabled(enabled)
+    fun setPreTripRemindersEnabled(enabled: Boolean, onResult: ((Throwable?) -> Unit)? = null) {
+        if (reminderCoordinator != null) {
+            viewModelScope.launch {
+                try {
+                    reminderCoordinator.setGlobalRemindersEnabled(enabled)
+                    onResult?.invoke(null)
+                } catch (e: Exception) {
+                    onResult?.invoke(e)
+                }
+            }
+        } else {
+            userPreferencesRepository.setPreTripRemindersEnabled(enabled)
+            onResult?.invoke(null)
+        }
     }
 
     fun selectTrip(tripId: Long?) {
@@ -697,7 +711,8 @@ class TravelViewModel(
                     travelStampRepository = appContainer.travelStampRepository,
                     userPreferencesRepository = appContainer.userPreferencesRepository,
                     database = appContainer.database,
-                    locationSuggestionRepository = appContainer.locationSuggestionRepository
+                    locationSuggestionRepository = appContainer.locationSuggestionRepository,
+                    reminderCoordinator = appContainer.reminderCoordinator
                 )
             }
         }

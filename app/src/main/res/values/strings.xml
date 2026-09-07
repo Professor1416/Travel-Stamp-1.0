@@ -29,4 +29,10 @@
     <string name="journey_reminder_helper_one_day">A reminder before tomorrow\'s journey.</string>
     <string name="journey_reminder_helper_morning">Usually at 7:00 AM, or one hour before an early departure.</string>
     <string name="journey_reminder_helper_two_hours">Requires a journey start time.</string>
+
+    <!-- Global Journey Reminders (N6.3) -->
+    <string name="journey_reminders_global_title">Journey Reminders</string>
+    <string name="journey_reminders_global_on_description">Allow reminders for journeys that have reminders enabled.</string>
+    <string name="journey_reminders_global_off_description">Journey reminders are paused. Your individual reminder choices are kept.</string>
+    <string name="journey_reminders_update_failed">Couldn\'t update journey reminders. Try again.</string>
 </resources>

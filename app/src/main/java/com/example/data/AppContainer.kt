@@ -4,6 +4,8 @@ import android.content.Context
 import com.example.data.local.TravelStampDatabase
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.local.UserPreferencesRepositoryImpl
+import com.example.data.notification.ReminderCoordinator
+import com.example.data.notification.ReminderCoordinatorImpl
 import com.example.data.notification.TripReminderScheduler
 import com.example.data.notification.TripReminderSchedulerImpl
 import com.example.data.repository.ChecklistRepository
@@ -26,6 +28,7 @@ interface AppContainer {
     val userPreferencesRepository: UserPreferencesRepository
     val locationSuggestionRepository: LocationSuggestionRepository
     val tripReminderScheduler: TripReminderScheduler
+    val reminderCoordinator: ReminderCoordinator
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -64,5 +67,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val locationSuggestionRepository: LocationSuggestionRepository by lazy {
         LocationSuggestionRepositoryImpl(tripRepository)
+    }
+
+    override val reminderCoordinator: ReminderCoordinator by lazy {
+        ReminderCoordinatorImpl(
+            userPreferencesRepository = userPreferencesRepository,
+            tripRepository = tripRepository,
+            reminderScheduler = tripReminderScheduler
+        )
     }
 }
