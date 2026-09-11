@@ -325,7 +325,16 @@ class TravelViewModel(
                 startTimeMinutes = startTimeMinutes?.takeIf { it in 0..1439 },
                 peopleCount = maxOf(1, peopleCount),
                 description = description.trim(),
-                reminderEnabled = reminderEnabled,
+                reminderEnabled = if (reminderEnabled) {
+                    com.example.ui.reminder.ReminderFormValidator.validateReminderForm(
+                        reminderEnabled = true,
+                        tripDate = date,
+                        startTimeMinutes = startTimeMinutes?.takeIf { it in 0..1439 },
+                        preset = reminderPreset
+                    ).isValid
+                } else {
+                    false
+                },
                 reminderPreset = reminderPreset,
                 updatedAt = System.currentTimeMillis()
             )
@@ -337,16 +346,37 @@ class TravelViewModel(
     fun toggleTripReminder(
         tripId: Long,
         enabled: Boolean,
-        preset: TripReminderPreset = TripReminderPreset.ONE_DAY_BEFORE
+        preset: TripReminderPreset = TripReminderPreset.ONE_DAY_BEFORE,
+        now: java.time.Instant = java.time.Instant.now(),
+        zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        onResult: ((Boolean) -> Unit)? = null
     ) {
         viewModelScope.launch {
-            val existing = tripRepository.getTripByIdSync(tripId) ?: return@launch
+            val existing = tripRepository.getTripByIdSync(tripId) ?: run {
+                onResult?.invoke(false)
+                return@launch
+            }
+            if (enabled) {
+                val validation = com.example.ui.reminder.ReminderFormValidator.validateReminderForm(
+                    reminderEnabled = true,
+                    tripDate = existing.date,
+                    startTimeMinutes = existing.startTimeMinutes,
+                    preset = preset,
+                    now = now,
+                    zoneId = zoneId
+                )
+                if (!validation.isValid) {
+                    onResult?.invoke(false)
+                    return@launch
+                }
+            }
             val updated = existing.copy(
                 reminderEnabled = enabled,
                 reminderPreset = preset,
                 updatedAt = System.currentTimeMillis()
             )
             tripRepository.updateTrip(updated)
+            onResult?.invoke(true)
         }
     }
 

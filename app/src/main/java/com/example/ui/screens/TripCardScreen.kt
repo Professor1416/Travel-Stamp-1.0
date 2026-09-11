@@ -186,6 +186,7 @@ fun TripCardScreen(
     var editReminderEnabled by remember { mutableStateOf(false) }
     var editReminderPreset by remember { mutableStateOf(TripReminderPreset.ONE_DAY_BEFORE) }
     var editError by remember { mutableStateOf<String?>(null) }
+    var reminderValidationError by remember(viewModel.selectedTripId.value) { mutableStateOf<String?>(null) }
 
     val filteredMoments = remember(moments, selectedCategoryFilter) {
         if (selectedCategoryFilter == null) {
@@ -448,19 +449,28 @@ fun TripCardScreen(
                                 Switch(
                                     checked = currentTrip.reminderEnabled,
                                     onCheckedChange = { isChecked ->
+                                        reminderValidationError = null
                                         if (isChecked) {
                                             permissionController.requestPermission {
                                                 viewModel.toggleTripReminder(
                                                     tripId = currentTrip.id,
                                                     enabled = true,
-                                                    preset = currentTrip.reminderPreset
+                                                    preset = currentTrip.reminderPreset,
+                                                    onResult = { success ->
+                                                        if (!success) {
+                                                            reminderValidationError = context.getString(R.string.journey_reminder_time_passed)
+                                                        }
+                                                    }
                                                 )
                                             }
                                         } else {
                                             viewModel.toggleTripReminder(
                                                 tripId = currentTrip.id,
                                                 enabled = false,
-                                                preset = currentTrip.reminderPreset
+                                                preset = currentTrip.reminderPreset,
+                                                onResult = {
+                                                    reminderValidationError = null
+                                                }
                                             )
                                         }
                                     },
@@ -469,6 +479,17 @@ fun TripCardScreen(
                                         checkedThumbColor = Color.White,
                                         checkedTrackColor = ForestPine
                                     )
+                                )
+                            }
+
+                            reminderValidationError?.let { errorText ->
+                                Text(
+                                    text = errorText,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier
+                                        .padding(top = Spacing.xxs)
+                                        .testTag("trip_reminder_validation_error")
                                 )
                             }
 
@@ -501,10 +522,16 @@ fun TripCardScreen(
                                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                                                 modifier = Modifier
                                                     .clickable {
+                                                        reminderValidationError = null
                                                         viewModel.toggleTripReminder(
                                                             tripId = currentTrip.id,
                                                             enabled = true,
-                                                            preset = preset
+                                                            preset = preset,
+                                                            onResult = { success ->
+                                                                if (!success) {
+                                                                    reminderValidationError = context.getString(R.string.journey_reminder_time_passed)
+                                                                }
+                                                            }
                                                         )
                                                     }
                                                     .testTag("preset_chip_${preset.name}")
