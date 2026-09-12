@@ -35,4 +35,16 @@
     <string name="journey_reminders_global_on_description">Allow reminders for journeys that have reminders enabled.</string>
     <string name="journey_reminders_global_off_description">Journey reminders are paused. Your individual reminder choices are kept.</string>
     <string name="journey_reminders_update_failed">Couldn\'t update journey reminders. Try again.</string>
+
+    <!-- Passport Ceremony (PC-2) -->
+    <string name="ceremony_journey_complete">JOURNEY COMPLETE</string>
+    <string name="ceremony_official_stamp">OFFICIAL STAMP %s</string>
+    <string name="ceremony_added_to_passport">ADDED TO YOUR PASSPORT</string>
+    <string name="ceremony_view_in_passport">VIEW IN PASSPORT</string>
+    <string name="ceremony_create_stamp_edition">CREATE STAMP EDITION</string>
+    <string name="ceremony_expedition_log">Expedition Log</string>
+    <string name="ceremony_accessibility_announcement">Official Stamp %1$s for %2$s added to your Passport.</string>
+    <string name="ceremony_error_title">Stamp Display Unavailable</string>
+    <string name="ceremony_error_message">Your journey was completed, but the stamp could not be displayed.</string>
+    <string name="ceremony_loading_journey">Preparing your passport…</string>
 </resources>

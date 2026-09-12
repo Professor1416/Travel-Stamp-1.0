@@ -29,6 +29,7 @@ import com.example.ui.screens.CreateTripScreen
 import com.example.ui.screens.FinishTripScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.PassportCeremonyScreen
 import com.example.ui.screens.PosterExportScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TravelStampScreen
@@ -43,6 +44,7 @@ object Destinations {
     const val ADD_MOMENT = "add_moment/{tripId}"
     const val EDIT_MOMENT = "edit_moment/{tripId}/{momentId}"
     const val FINISH_TRIP = "finish_trip/{tripId}"
+    const val PASSPORT_CEREMONY = "passport_ceremony/{tripId}"
     const val TRAVEL_STAMP = "travel_stamp/{tripId}"
     const val COLLECTION = "collection"
     const val SETTINGS = "settings"
@@ -53,6 +55,7 @@ object Destinations {
     fun addMoment(tripId: Long) = "add_moment/$tripId"
     fun editMoment(tripId: Long, momentId: Long) = "edit_moment/$tripId/$momentId"
     fun finishTrip(tripId: Long) = "finish_trip/$tripId"
+    fun passportCeremony(tripId: Long) = "passport_ceremony/$tripId"
     fun travelStamp(tripId: Long) = "travel_stamp/$tripId"
     fun posterExport(
         tripId: Long,
@@ -264,8 +267,35 @@ fun TravelNavHost(
                         navController.popBackStack()
                     },
                     onStampGenerated = { id ->
+                        navController.navigate(Destinations.passportCeremony(id)) {
+                            popUpTo(Destinations.FINISH_TRIP) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            composable(
+                route = Destinations.PASSPORT_CEREMONY,
+                arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                PassportCeremonyScreen(
+                    tripId = tripId,
+                    viewModel = viewModel,
+                    onViewInPassport = {
+                        navController.navigate(Destinations.COLLECTION) {
+                            popUpTo(Destinations.HOME) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                    onCreateStampEdition = { id ->
                         navController.navigate(Destinations.travelStamp(id)) {
-                            popUpTo(Destinations.TRIP_CARD) { inclusive = true }
+                            popUpTo(Destinations.passportCeremony(id)) { inclusive = true }
+                        }
+                    },
+                    onExpeditionLog = { id ->
+                        navController.navigate(Destinations.tripCard(id)) {
+                            popUpTo(Destinations.passportCeremony(id)) { inclusive = true }
                         }
                     }
                 )

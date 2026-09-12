@@ -23,6 +23,7 @@ import com.example.data.model.TripReminderPreset
 import com.example.data.model.TripStatus
 import com.example.ui.permission.NotificationPermissionController
 import com.example.ui.theme.MyApplicationTheme
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -49,11 +50,23 @@ class JourneyReminderUiRobolectricTest {
 
     @Before
     fun setUp() {
+        try {
+            composeTestRule.mainClock.advanceTimeBy(2000)
+        } catch (_: Throwable) {}
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences("notification_permission_prefs", Context.MODE_PRIVATE)
             .edit()
             .clear()
             .commit()
+    }
+
+    @After
+    fun tearDown() {
+        try {
+            composeTestRule.mainClock.advanceTimeBy(2000)
+        } catch (_: Throwable) {}
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 
     @Test
@@ -236,6 +249,7 @@ class JourneyReminderUiRobolectricTest {
 
         // User adds start time
         startTimeState = 600 // 10:00 AM
+        composeTestRule.mainClock.advanceTimeBy(500)
         composeTestRule.waitForIdle()
 
         // Error is cleared
@@ -275,6 +289,7 @@ class JourneyReminderUiRobolectricTest {
 
         // Turn OFF
         composeTestRule.onNodeWithTag("reminder_enable_switch").performClick()
+        composeTestRule.mainClock.advanceTimeBy(500)
         composeTestRule.waitForIdle()
 
         assertFalse(enabledState)
@@ -430,6 +445,7 @@ class JourneyReminderUiRobolectricTest {
 
         // User removes start time in Edit flow
         editStartTimeMinutes = null
+        composeTestRule.mainClock.advanceTimeBy(500)
         composeTestRule.waitForIdle()
 
         // Error immediately surfaces
