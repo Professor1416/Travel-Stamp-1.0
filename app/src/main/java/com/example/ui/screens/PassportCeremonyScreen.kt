@@ -156,10 +156,14 @@ fun PassportCeremonyScreen(
         }
     }
 
+    // Gate trip and stamp to ensure we only pass matching data and avoid brief stale rendering
+    val gatedTrip = currentTrip?.takeIf { it.id == tripId }
+    val gatedStamp = currentStamp?.takeIf { it.tripId == tripId }
+
     PassportCeremonyContent(
         tripId = tripId,
-        trip = currentTrip,
-        stamp = currentStamp,
+        trip = gatedTrip,
+        stamp = gatedStamp,
         onViewInPassport = onViewInPassport,
         onCreateStampEdition = onCreateStampEdition,
         onExpeditionLog = onExpeditionLog,
