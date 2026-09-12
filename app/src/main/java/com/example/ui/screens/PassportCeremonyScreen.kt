@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -58,6 +59,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -238,23 +241,144 @@ fun PassportCeremonyContent(
     val surfaceAlpha = remember { Animatable(if (isInitiallyComplete) 1f else 0f) }
     val surfaceScale = remember { Animatable(if (isInitiallyComplete) 1f else 0.96f) }
     val stampAlpha = remember { Animatable(if (isInitiallyComplete) 1f else 0f) }
-    val stampScale = remember { Animatable(if (isInitiallyComplete) 1f else 1.10f) }
+    val stampScale = remember { Animatable(if (isInitiallyComplete) 1f else 1.08f) }
     val stampElevation = remember { Animatable(if (isInitiallyComplete) 0f else 8f) }
+    val stampTranslationY = remember { Animatable(if (isInitiallyComplete) 0f else -24f) }
+    val paperScale = remember { Animatable(1f) }
 
-    // Synchronize animatable values if snapped to COMPLETE
+    // Instant-snap actual values to COMPLETE synchronous states to bypass coroutine delays
+    val actualSurfaceAlpha = if (ceremonyPhase == PassportCeremonyPhase.COMPLETE) 1f else surfaceAlpha.value
+    val actualSurfaceScale = if (ceremonyPhase == PassportCeremonyPhase.COMPLETE) 1f else surfaceScale.value
+    val actualStampAlpha = if (ceremonyPhase == PassportCeremonyPhase.COMPLETE) 1f else stampAlpha.value
+    val actualStampScale = if (ceremonyPhase == PassportCeremonyPhase.COMPLETE) 1f else stampScale.value
+    val actualStampElevation = if (ceremonyPhase == PassportCeremonyPhase.COMPLETE) 0f else stampElevation.value
+    val actualStampTranslationY = if (ceremonyPhase == PassportCeremonyPhase.COMPLETE) 0f else stampTranslationY.value
+    val actualPaperScale = if (ceremonyPhase == PassportCeremonyPhase.COMPLETE) 1f else paperScale.value
+
+    // Parallel Compose-managed Animation Drivers to prevent Espresso Idling out-of-sync failures
+    // 1. surfaceAlpha
     LaunchedEffect(ceremonyPhase) {
-        if (ceremonyPhase == PassportCeremonyPhase.COMPLETE) {
-            surfaceAlpha.snapTo(1f)
-            surfaceScale.snapTo(1f)
-            stampAlpha.snapTo(1f)
-            stampScale.snapTo(1f)
-            stampElevation.snapTo(0f)
+        when (ceremonyPhase) {
+            PassportCeremonyPhase.ENTRY -> {
+                surfaceAlpha.animateTo(1f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+            }
+            PassportCeremonyPhase.COMPLETE -> {
+                surfaceAlpha.snapTo(1f)
+            }
+            else -> {}
+        }
+    }
+
+    // 2. surfaceScale
+    LaunchedEffect(ceremonyPhase) {
+        when (ceremonyPhase) {
+            PassportCeremonyPhase.ENTRY -> {
+                surfaceScale.animateTo(1.0f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+            }
+            PassportCeremonyPhase.COMPLETE -> {
+                surfaceScale.snapTo(1f)
+            }
+            else -> {}
+        }
+    }
+
+    // 3. stampAlpha
+    LaunchedEffect(ceremonyPhase) {
+        when (ceremonyPhase) {
+            PassportCeremonyPhase.ENTRY -> {
+                stampAlpha.animateTo(0.75f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+            }
+            PassportCeremonyPhase.PRE_PRESS -> {
+                stampAlpha.animateTo(0.80f, animationSpec = tween(300, easing = LinearOutSlowInEasing))
+            }
+            PassportCeremonyPhase.RESOLVE -> {
+                stampAlpha.animateTo(1.0f, animationSpec = tween(450, easing = FastOutSlowInEasing))
+            }
+            PassportCeremonyPhase.COMPLETE -> {
+                stampAlpha.snapTo(1f)
+            }
+            else -> {}
+        }
+    }
+
+    // 4. stampScale
+    LaunchedEffect(ceremonyPhase) {
+        when (ceremonyPhase) {
+            PassportCeremonyPhase.ENTRY -> {
+                stampScale.animateTo(1.06f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+            }
+            PassportCeremonyPhase.PRE_PRESS -> {
+                stampScale.animateTo(1.06f, animationSpec = tween(300, easing = LinearOutSlowInEasing))
+            }
+            PassportCeremonyPhase.IMPACT -> {
+                stampScale.animateTo(0.97f, animationSpec = tween(140, easing = FastOutLinearInEasing))
+                // Settle
+                stampScale.animateTo(1.00f, animationSpec = tween(80, easing = LinearOutSlowInEasing))
+            }
+            PassportCeremonyPhase.COMPLETE -> {
+                stampScale.snapTo(1f)
+            }
+            else -> {}
+        }
+    }
+
+    // 5. stampElevation
+    LaunchedEffect(ceremonyPhase) {
+        when (ceremonyPhase) {
+            PassportCeremonyPhase.ENTRY -> {
+                stampElevation.animateTo(8f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+            }
+            PassportCeremonyPhase.PRE_PRESS -> {
+                stampElevation.animateTo(8f, animationSpec = tween(300, easing = LinearOutSlowInEasing))
+            }
+            PassportCeremonyPhase.IMPACT -> {
+                stampElevation.animateTo(0.5f, animationSpec = tween(140, easing = FastOutLinearInEasing))
+                // Settle
+                stampElevation.animateTo(0f, animationSpec = tween(80, easing = LinearOutSlowInEasing))
+            }
+            PassportCeremonyPhase.COMPLETE -> {
+                stampElevation.snapTo(0f)
+            }
+            else -> {}
+        }
+    }
+
+    // 6. stampTranslationY
+    LaunchedEffect(ceremonyPhase) {
+        when (ceremonyPhase) {
+            PassportCeremonyPhase.ENTRY -> {
+                stampTranslationY.animateTo(-24f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+            }
+            PassportCeremonyPhase.PRE_PRESS -> {
+                stampTranslationY.animateTo(-24f, animationSpec = tween(300, easing = LinearOutSlowInEasing))
+            }
+            PassportCeremonyPhase.IMPACT -> {
+                stampTranslationY.animateTo(0f, animationSpec = tween(140, easing = FastOutLinearInEasing))
+            }
+            PassportCeremonyPhase.COMPLETE -> {
+                stampTranslationY.snapTo(0f)
+            }
+            else -> {}
+        }
+    }
+
+    // 7. paperScale
+    LaunchedEffect(ceremonyPhase) {
+        when (ceremonyPhase) {
+            PassportCeremonyPhase.IMPACT -> {
+                paperScale.animateTo(0.992f, animationSpec = tween(70, easing = FastOutLinearInEasing))
+                paperScale.animateTo(1.000f, animationSpec = tween(70, easing = LinearOutSlowInEasing))
+            }
+            PassportCeremonyPhase.COMPLETE -> {
+                paperScale.snapTo(1f)
+            }
+            else -> {}
         }
     }
 
     val isAlreadyComplete = ceremonyPhase == PassportCeremonyPhase.COMPLETE
 
-    // Master Timeline orchestration (~1,650 ms total)
+    // Master Timeline orchestration (solely driving phase states sequentially)
     LaunchedEffect(animatorsEnabled, stamp?.id, isAlreadyComplete) {
         if (isAlreadyComplete || !animatorsEnabled || stamp == null) {
             ceremonyPhase = PassportCeremonyPhase.COMPLETE
@@ -263,14 +387,11 @@ fun PassportCeremonyContent(
 
         // Phase 0: ENTRY (0 - 250ms)
         ceremonyPhase = PassportCeremonyPhase.ENTRY
-        surfaceAlpha.animateTo(1f, animationSpec = tween(250, easing = FastOutSlowInEasing))
-        surfaceScale.animateTo(1.0f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+        delay(250)
 
         // Phase 1: PRE_PRESS (250 - 550ms)
         ceremonyPhase = PassportCeremonyPhase.PRE_PRESS
-        stampAlpha.animateTo(0.85f, animationSpec = tween(200, easing = LinearOutSlowInEasing))
-        stampElevation.animateTo(8f, animationSpec = tween(300, easing = LinearOutSlowInEasing))
-        delay(100)
+        delay(300)
 
         // Phase 2: IMPACT (550 - 700ms)
         ceremonyPhase = PassportCeremonyPhase.IMPACT
@@ -280,13 +401,14 @@ fun PassportCeremonyContent(
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             } catch (_: Throwable) {}
         }
-        stampElevation.animateTo(0f, animationSpec = tween(120, easing = FastOutSlowInEasing))
-        stampScale.animateTo(0.98f, animationSpec = tween(120, easing = FastOutSlowInEasing))
-        stampScale.animateTo(1.00f, animationSpec = tween(50, easing = FastOutSlowInEasing))
+        delay(140) // impact transition
+
+        // Settle state
+        delay(80)
 
         // Phase 3: RESOLVE (700 - 1250ms)
         ceremonyPhase = PassportCeremonyPhase.RESOLVE
-        stampAlpha.animateTo(1.0f, animationSpec = tween(450, easing = FastOutSlowInEasing))
+        delay(450)
         delay(100)
 
         // Phase 4: COMPLETE (1250 - 1650ms)
@@ -384,8 +506,8 @@ fun PassportCeremonyContent(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .alpha(surfaceAlpha.value)
-                        .scale(surfaceScale.value),
+                        .alpha(actualSurfaceAlpha)
+                        .scale(actualSurfaceScale * actualPaperScale),
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = SandCanvasLight
@@ -404,13 +526,17 @@ fun PassportCeremonyContent(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
                                 .testTag("ceremony_stamp")
+                                .graphicsLayer {
+                                    translationY = actualStampTranslationY.dp.toPx()
+                                    scaleX = actualStampScale
+                                    scaleY = actualStampScale
+                                }
+                                .alpha(actualStampAlpha)
                                 .shadow(
-                                    elevation = stampElevation.value.dp,
+                                    elevation = actualStampElevation.dp,
                                     shape = RoundedCornerShape(115.dp),
                                     clip = false
                                 )
-                                .alpha(stampAlpha.value)
-                                .scale(stampScale.value)
                                 .then(
                                     if (isComplete) {
                                         Modifier.semantics {

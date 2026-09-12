@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.JourneyDisplayState
 import com.example.data.model.TripStatus
 import com.example.ui.theme.ForestPine
 import com.example.ui.theme.OchreGold
@@ -227,24 +228,29 @@ fun SectionHeader(
  */
 @Composable
 fun StatusBadge(
-    status: TripStatus,
+    displayState: JourneyDisplayState,
     modifier: Modifier = Modifier
 ) {
-    val (label, bgTint, contentColor) = when (status) {
-        TripStatus.COMPLETED -> Triple(
+    val (label, bgTint, contentColor) = when (displayState) {
+        JourneyDisplayState.STAMP_EARNED -> Triple(
             "🏅 STAMP EARNED",
             Terracotta.copy(alpha = 0.15f),
             Terracotta
         )
-        TripStatus.UPCOMING -> Triple(
+        JourneyDisplayState.UPCOMING -> Triple(
             "⏳ UPCOMING",
             MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
             MaterialTheme.colorScheme.secondary
         )
-        TripStatus.IN_PROGRESS -> Triple(
+        JourneyDisplayState.IN_PROGRESS -> Triple(
             "🧭 IN PROGRESS",
             MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
             MaterialTheme.colorScheme.primary
+        )
+        JourneyDisplayState.READY_TO_COMPLETE -> Triple(
+            "✓ READY TO COMPLETE",
+            OchreGold.copy(alpha = 0.15f),
+            OchreGold
         )
     }
 

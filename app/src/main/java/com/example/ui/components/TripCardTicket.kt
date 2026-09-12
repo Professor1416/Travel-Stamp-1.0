@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.data.model.Trip
 import com.example.data.model.TripStatus
+import com.example.data.model.JourneyDisplayState
+import com.example.data.model.JourneyDisplayStateResolver
 import com.example.data.util.DateUtils
 import com.example.ui.theme.Terracotta
 
@@ -77,8 +79,9 @@ fun TripCardTicket(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
                 ) {
-                    StatusBadge(status = trip.status)
-                    if (trip.reminderEnabled && trip.status != TripStatus.COMPLETED) {
+                    val displayState = JourneyDisplayStateResolver.resolve(trip)
+                    StatusBadge(displayState = displayState)
+                    if (trip.reminderEnabled && displayState != JourneyDisplayState.STAMP_EARNED && displayState != JourneyDisplayState.READY_TO_COMPLETE) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)

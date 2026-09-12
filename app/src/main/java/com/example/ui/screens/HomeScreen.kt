@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.model.Trip
+import com.example.data.model.JourneyDisplayState
+import com.example.data.model.JourneyDisplayStateResolver
 import com.example.data.util.DateUtils
 import com.example.ui.components.CompactStampBadge
 import com.example.ui.components.EmptyStateView
@@ -86,8 +88,50 @@ fun HomeScreen(
     val completedTripsCount by viewModel.completedTripsCount.collectAsStateWithLifecycle()
     val totalMomentsCount by viewModel.totalMomentsCount.collectAsStateWithLifecycle()
 
-    // Repository-level authoritative sorting
-    val sortedActiveTrips = activeTrips
+    // Repository-level authoritative sorting, prioritized and layered by derived state UX rules
+    val sortedActiveTrips = remember(activeTrips) {
+        activeTrips.map { trip ->
+            trip to JourneyDisplayStateResolver.resolve(trip)
+        }.sortedWith { a, b ->
+            val stateA = a.second
+            val stateB = b.second
+            
+            // Priority order: READY_TO_COMPLETE (1), IN_PROGRESS (2), UPCOMING (3), STAMP_EARNED (4)
+            val priorityA = when (stateA) {
+                JourneyDisplayState.READY_TO_COMPLETE -> 1
+                JourneyDisplayState.IN_PROGRESS -> 2
+                JourneyDisplayState.UPCOMING -> 3
+                JourneyDisplayState.STAMP_EARNED -> 4
+            }
+            val priorityB = when (stateB) {
+                JourneyDisplayState.READY_TO_COMPLETE -> 1
+                JourneyDisplayState.IN_PROGRESS -> 2
+                JourneyDisplayState.UPCOMING -> 3
+                JourneyDisplayState.STAMP_EARNED -> 4
+            }
+            
+            if (priorityA != priorityB) {
+                priorityA.compareTo(priorityB)
+            } else {
+                val dateA = DateUtils.parseTripDate(a.first.date)
+                val dateB = DateUtils.parseTripDate(b.first.date)
+                
+                if (dateA != null && dateB != null) {
+                    if (stateA == JourneyDisplayState.READY_TO_COMPLETE) {
+                        // READY_TO_COMPLETE: most recent past journey first
+                        dateB.compareTo(dateA)
+                    } else if (stateA == JourneyDisplayState.UPCOMING) {
+                        // UPCOMING: nearest upcoming journey first
+                        dateA.compareTo(dateB)
+                    } else {
+                        a.first.id.compareTo(b.first.id)
+                    }
+                } else {
+                    a.first.id.compareTo(b.first.id)
+                }
+            }
+        }.map { it.first }
+    }
     val sortedCompletedTrips = completedTrips
 
     Scaffold(
@@ -285,10 +329,14 @@ fun HomeScreen(
             // 4. Current Expeditions (Active / Upcoming Trips)
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
+                    val openCount = sortedActiveTrips.size
+                    val trailingText = if (openCount > 0) {
+                        if (openCount == 1) "1 Open" else "$openCount Open"
+                    } else null
                     SectionHeader(
                         title = "Current Expeditions",
                         emoji = "🧭",
-                        trailingText = if (sortedActiveTrips.isNotEmpty()) "${sortedActiveTrips.size} Active" else null,
+                        trailingText = trailingText,
                         modifier = Modifier.padding(bottom = Spacing.md)
                     )
 
