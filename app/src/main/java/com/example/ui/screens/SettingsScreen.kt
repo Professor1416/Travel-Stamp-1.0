@@ -325,6 +325,7 @@ fun SettingsScreen(
                         Switch(
                             checked = preTripRemindersEnabled,
                             onCheckedChange = { enabled ->
+                                println("DEBUG_SWITCH_CLICKED: $enabled")
                                 if (enabled) {
                                     permissionController.requestPermission {
                                         viewModel.setPreTripRemindersEnabled(true) { error ->

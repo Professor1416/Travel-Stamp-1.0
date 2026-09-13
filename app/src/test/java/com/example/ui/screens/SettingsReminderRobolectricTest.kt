@@ -8,6 +8,9 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.Modifier
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.TravelStampDatabase
@@ -22,7 +25,11 @@ import com.example.data.repository.TravelStampRepositoryImpl
 import com.example.data.repository.TripRepositoryImpl
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.TravelViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -51,8 +58,9 @@ class SettingsReminderRobolectricTest {
 
     @Before
     fun setup() {
+        kotlinx.coroutines.Dispatchers.setMain(kotlinx.coroutines.test.UnconfinedTestDispatcher())
         context = ApplicationProvider.getApplicationContext()
-        context.getSharedPreferences("travel_stamp_user_preferences", Context.MODE_PRIVATE)
+        context.getSharedPreferences("travel_stamp_prefs", Context.MODE_PRIVATE)
             .edit()
             .clear()
             .commit()
@@ -60,6 +68,10 @@ class SettingsReminderRobolectricTest {
             .edit()
             .clear()
             .commit()
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val shadowNotificationManager: org.robolectric.shadows.ShadowNotificationManager = org.robolectric.Shadows.shadowOf(notificationManager)
+        shadowNotificationManager.setNotificationsEnabled(true)
 
         db = Room.inMemoryDatabaseBuilder(context, TravelStampDatabase::class.java)
             .allowMainThreadQueries()
@@ -86,6 +98,7 @@ class SettingsReminderRobolectricTest {
     @After
     fun tearDown() {
         db.close()
+        kotlinx.coroutines.Dispatchers.resetMain()
     }
 
     @Test
@@ -144,7 +157,10 @@ class SettingsReminderRobolectricTest {
         composeTestRule.waitForIdle()
 
         // Toggle OFF
-        composeTestRule.onNodeWithTag("pre_trip_reminders_switch").performClick()
+        composeTestRule.onNodeWithTag("pre_trip_reminders_switch")
+            .performScrollTo()
+            .performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         assertFalse(userPrefs.preTripRemindersEnabled.value)
@@ -171,7 +187,10 @@ class SettingsReminderRobolectricTest {
         composeTestRule.waitForIdle()
 
         // Click to turn ON
-        composeTestRule.onNodeWithTag("pre_trip_reminders_switch").performClick()
+        composeTestRule.onNodeWithTag("pre_trip_reminders_switch")
+            .performScrollTo()
+            .performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         assertTrue(userPrefs.preTripRemindersEnabled.value)
@@ -197,7 +216,10 @@ class SettingsReminderRobolectricTest {
         composeTestRule.waitForIdle()
 
         // Click to turn ON
-        composeTestRule.onNodeWithTag("pre_trip_reminders_switch").performClick()
+        composeTestRule.onNodeWithTag("pre_trip_reminders_switch")
+            .performScrollTo()
+            .performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         // Explanation dialog should appear
@@ -223,11 +245,15 @@ class SettingsReminderRobolectricTest {
         }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag("pre_trip_reminders_switch").performClick()
+        composeTestRule.onNodeWithTag("pre_trip_reminders_switch")
+            .performScrollTo()
+            .performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         // Dismiss explanation ("Not now")
-        composeTestRule.onNodeWithTag("notification_permission_dismiss_button").performClick()
+        composeTestRule.onNodeWithTag("notification_permission_not_now_button").performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         // Dialog closes, global stays OFF
@@ -253,7 +279,10 @@ class SettingsReminderRobolectricTest {
         }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag("pre_trip_reminders_switch").performClick()
+        composeTestRule.onNodeWithTag("pre_trip_reminders_switch")
+            .performScrollTo()
+            .performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag("notification_permission_explanation_dialog").assertIsDisplayed()
@@ -261,6 +290,7 @@ class SettingsReminderRobolectricTest {
         // Continue and simulate OS permission grant
         shadowApp.grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
         composeTestRule.onNodeWithTag("notification_permission_continue_button").performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         // On API 34, launcher requests POST_NOTIFICATIONS
@@ -271,6 +301,7 @@ class SettingsReminderRobolectricTest {
 
         // After permission is available, global is enabled
         viewModel.setPreTripRemindersEnabled(true)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         assertTrue(userPrefs.preTripRemindersEnabled.value)
@@ -286,7 +317,7 @@ class SettingsReminderRobolectricTest {
         // Mark as previously requested to trigger Blocked status
         context.getSharedPreferences("notification_permission_prefs", Context.MODE_PRIVATE)
             .edit()
-            .putBoolean("has_requested_notification_permission", true)
+            .putBoolean("key_has_requested_before", true)
             .commit()
 
         composeTestRule.setContent {
@@ -301,7 +332,10 @@ class SettingsReminderRobolectricTest {
         composeTestRule.waitForIdle()
 
         // Click to turn ON
-        composeTestRule.onNodeWithTag("pre_trip_reminders_switch").performClick()
+        composeTestRule.onNodeWithTag("pre_trip_reminders_switch")
+            .performScrollTo()
+            .performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeTestRule.waitForIdle()
 
         // Blocked dialog is shown with Open Settings

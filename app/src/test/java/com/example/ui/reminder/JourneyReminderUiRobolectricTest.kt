@@ -50,9 +50,6 @@ class JourneyReminderUiRobolectricTest {
 
     @Before
     fun setUp() {
-        try {
-            composeTestRule.mainClock.advanceTimeBy(2000)
-        } catch (_: Throwable) {}
         Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences("notification_permission_prefs", Context.MODE_PRIVATE)
@@ -63,9 +60,6 @@ class JourneyReminderUiRobolectricTest {
 
     @After
     fun tearDown() {
-        try {
-            composeTestRule.mainClock.advanceTimeBy(2000)
-        } catch (_: Throwable) {}
         Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 

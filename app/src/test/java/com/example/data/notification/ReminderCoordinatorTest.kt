@@ -42,7 +42,7 @@ class ReminderCoordinatorTest {
     @Before
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
-        context.getSharedPreferences("travel_stamp_user_preferences", Context.MODE_PRIVATE)
+        context.getSharedPreferences("travel_stamp_prefs", Context.MODE_PRIVATE)
             .edit()
             .clear()
             .commit()

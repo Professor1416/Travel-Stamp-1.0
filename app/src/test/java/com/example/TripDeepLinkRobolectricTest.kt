@@ -128,6 +128,7 @@ class TripDeepLinkRobolectricTest {
 
         // Verify reminder intent handled without crash
         assertTrue(activity.isFinishing.not())
+        controller.destroy()
     }
 
     @Test
@@ -144,6 +145,7 @@ class TripDeepLinkRobolectricTest {
         activity.onNewIntent(reminderIntent)
 
         assertTrue(activity.isFinishing.not())
+        controller.destroy()
     }
 
     @Test
@@ -160,6 +162,7 @@ class TripDeepLinkRobolectricTest {
 
         // Assert onboarding preference was NOT mutated
         assertFalse("Onboarding preference must not be mutated automatically", userPrefs.hasCompletedOnboarding.value)
+        controller.destroy()
     }
 
     @Test

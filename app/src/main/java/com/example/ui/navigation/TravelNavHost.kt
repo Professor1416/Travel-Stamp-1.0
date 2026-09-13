@@ -287,6 +287,7 @@ fun TravelNavHost(
                             popUpTo(Destinations.HOME) { inclusive = false }
                             launchSingleTop = true
                         }
+                        navController.currentBackStackEntry?.savedStateHandle?.set("targetStampId", tripId)
                     },
                     onCreateStampEdition = { id ->
                         navController.navigate(Destinations.travelStamp(id)) {
@@ -366,10 +367,15 @@ fun TravelNavHost(
                 )
             }
 
-            composable(Destinations.COLLECTION) {
+            composable(Destinations.COLLECTION) { backStackEntry ->
+                val targetStampId = backStackEntry.savedStateHandle.get<Long>("targetStampId")
+                if (targetStampId != null) {
+                    backStackEntry.savedStateHandle.remove<Long>("targetStampId")
+                }
                 CollectionScreen(
                     viewModel = viewModel,
                     onNavigateBack = null,
+                    targetStampId = targetStampId,
                     onTripClick = { tripId ->
                         viewModel.selectTrip(tripId)
                         navController.navigate(Destinations.tripCard(tripId))
