@@ -196,8 +196,8 @@ fun PassportPage(
 ) {
     BoxWithConstraints(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)), RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)), RoundedCornerShape(20.dp))
             .padding(18.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -217,7 +217,7 @@ fun PassportPage(
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .size(160.dp)
-                .graphicsLayer { alpha = 0.04f }
+                .graphicsLayer { alpha = 0.06f }
                 .align(Alignment.Center)
         )
 
@@ -238,7 +238,7 @@ fun PassportPage(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.8.sp
                     ),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                 )
                 Text(
                     text = "OFFICIAL RECORD",
@@ -246,7 +246,7 @@ fun PassportPage(
                         fontSize = 8.sp,
                         letterSpacing = 1.2.sp
                     ),
-                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
                 )
             }
 
@@ -306,7 +306,7 @@ fun PassportPage(
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp
                 ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                 modifier = Modifier.padding(bottom = 4.dp)
             )
         }
@@ -357,14 +357,14 @@ fun PassportStampSlot(
                     .size(stampSize * 0.82f)
                     .border(
                         width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
                         shape = RoundedCornerShape(percent = 50)
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "★",
-                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f),
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
                     fontSize = 14.sp
                 )
             }
@@ -379,8 +379,8 @@ fun EmptyPassportPage(
 ) {
     Box(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)), RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)), RoundedCornerShape(20.dp))
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
