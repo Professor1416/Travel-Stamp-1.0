@@ -50,10 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.TravelStamp
-import com.example.ui.theme.ForestPine
-import com.example.ui.theme.OchreGold
-import com.example.ui.theme.SandCanvasLight
-import com.example.ui.theme.Terracotta
+
 
 const val PASSPORT_PAGE_SIZE = 4
 
@@ -199,8 +196,8 @@ fun PassportPage(
 ) {
     BoxWithConstraints(
         modifier = modifier
-            .background(SandCanvasLight, RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.2.dp, OchreGold.copy(alpha = 0.35f)), RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)), RoundedCornerShape(20.dp))
             .padding(18.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -241,7 +238,7 @@ fun PassportPage(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.8.sp
                     ),
-                    color = ForestPine.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
                 Text(
                     text = "OFFICIAL RECORD",
@@ -249,7 +246,7 @@ fun PassportPage(
                         fontSize = 8.sp,
                         letterSpacing = 1.2.sp
                     ),
-                    color = OchreGold.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
                 )
             }
 
@@ -309,7 +306,7 @@ fun PassportPage(
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp
                 ),
-                color = ForestPine.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.padding(bottom = 4.dp)
             )
         }
@@ -360,14 +357,14 @@ fun PassportStampSlot(
                     .size(stampSize * 0.82f)
                     .border(
                         width = 1.dp,
-                        color = OchreGold.copy(alpha = 0.12f),
+                        color = MaterialTheme.colorScheme.outlineVariant,
                         shape = RoundedCornerShape(percent = 50)
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "★",
-                    color = OchreGold.copy(alpha = 0.15f),
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f),
                     fontSize = 14.sp
                 )
             }
@@ -382,8 +379,8 @@ fun EmptyPassportPage(
 ) {
     Box(
         modifier = modifier
-            .background(SandCanvasLight, RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.2.dp, OchreGold.copy(alpha = 0.35f)), RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)), RoundedCornerShape(20.dp))
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -409,7 +406,7 @@ fun EmptyPassportPage(
                     fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Bold
                 ),
-                color = ForestPine,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.testTag("empty_passport_title")
             )
@@ -419,7 +416,7 @@ fun EmptyPassportPage(
             Text(
                 text = "Complete your first journey to earn your first Travel Stamp.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = ForestPine.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.testTag("empty_passport_body")
             )
@@ -429,8 +426,8 @@ fun EmptyPassportPage(
             Button(
                 onClick = onCreateJourney,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Terracotta,
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
                 ),
                 shape = RoundedCornerShape(50),
                 modifier = Modifier.testTag("empty_passport_cta")
@@ -459,7 +456,7 @@ fun PassportPageIndicator(
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.5.sp
         ),
-        color = ForestPine.copy(alpha = 0.6f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
     )
 }
