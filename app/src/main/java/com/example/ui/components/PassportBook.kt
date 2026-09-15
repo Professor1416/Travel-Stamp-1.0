@@ -179,15 +179,6 @@ fun PassportBook(
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Accessible page progress helper underneath the pager
-        PassportPageIndicator(
-            currentPage = pagerState.currentPage + 1,
-            totalPages = pages.size,
-            modifier = Modifier.testTag("passport_pager_indicator")
-        )
     }
 }
 
@@ -448,20 +439,4 @@ fun EmptyPassportPage(
     }
 }
 
-@Composable
-fun PassportPageIndicator(
-    currentPage: Int,
-    totalPages: Int,
-    modifier: Modifier = Modifier
-) {
-    Text(
-        text = "PAGE %d OF %d".format(currentPage, totalPages),
-        style = MaterialTheme.typography.labelMedium.copy(
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp
-        ),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier
-    )
-}
+
