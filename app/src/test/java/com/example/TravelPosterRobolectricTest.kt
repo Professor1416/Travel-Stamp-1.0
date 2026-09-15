@@ -21,6 +21,7 @@ import com.example.data.repository.MomentRepositoryImpl
 import com.example.data.repository.TravelStampRepositoryImpl
 import com.example.data.repository.TripRepositoryImpl
 import com.example.ui.poster.PosterExporter
+import com.example.ui.poster.PhotoStampLayout
 import com.example.ui.poster.PosterRenderConfig
 import com.example.ui.poster.PosterRenderResult
 import com.example.ui.poster.PosterRenderer
@@ -100,8 +101,10 @@ class TravelPosterRobolectricTest {
     fun testPosterTemplateEnum() {
         assertEquals("Photo + Stamp", PosterTemplate.PHOTO_STAMP.title)
         assertEquals("Passport Focus", PosterTemplate.PASSPORT_STAMP.title)
+        assertEquals("Story Slip", PosterTemplate.STORY_SLIP.title)
         assertTrue(PosterTemplate.PHOTO_STAMP.description.isNotEmpty())
         assertTrue(PosterTemplate.PASSPORT_STAMP.description.isNotEmpty())
+        assertTrue(PosterTemplate.STORY_SLIP.description.isNotEmpty())
     }
 
     @Test
@@ -879,5 +882,87 @@ class TravelPosterRobolectricTest {
 
         // Passport Stamp without photo: Always Enabled
         assertTrue(isSaveAndShareEnabled(PosterTemplate.PASSPORT_STAMP, null, false))
+    }
+
+    @Test
+    fun testStorySlipRenderingWithTransformations() {
+        val trip = Trip(
+            id = 202L,
+            name = "Harihar Fort",
+            destination = "Nashik, Maharashtra",
+            date = "2026-11-20",
+            status = TripStatus.COMPLETED,
+            stampEarned = true
+        )
+        val stamp = TravelStamp(
+            id = 202L,
+            tripId = 202L,
+            stampNumber = 9L,
+            stampCode = "#009",
+            title = "Harihar Fort",
+            destination = "Nashik, Maharashtra",
+            dateText = "20 NOV 2026",
+            peopleCount = 4,
+            momentsCount = 5
+        )
+
+        // Create a temporary sample photo bitmap
+        val samplePhotoFile = File(context.cacheDir, "test_photo_story_slip.jpg")
+        val samplePixels = IntArray(800 * 600) { AndroidColor.DKGRAY }
+        val sampleBitmap = Bitmap.createBitmap(samplePixels, 800, 600, Bitmap.Config.ARGB_8888)
+        FileOutputStream(samplePhotoFile).use { out ->
+            sampleBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        sampleBitmap.recycle()
+
+        val photoUri = samplePhotoFile.absolutePath
+
+        // Render STORY_SLIP across all formats
+        for (format in StampEditionFormat.values()) {
+            val config = PosterRenderConfig(
+                template = PosterTemplate.STORY_SLIP,
+                format = format,
+                photoUri = photoUri,
+                panX = 0.05f,
+                panY = -0.05f,
+                zoom = 1.2f,
+                stampPositionX = 0.75f,
+                stampPositionY = PhotoStampLayout.getFooterStartYRatio(format),
+                stampSize = StampSize.MEDIUM
+            )
+
+            val renderResult = PosterRenderer.render(context, trip, stamp, config)
+            assertTrue(renderResult is PosterRenderResult.Success)
+            val bitmap = (renderResult as PosterRenderResult.Success).bitmap
+            assertEquals(format.width, bitmap.width)
+            assertEquals(format.height, bitmap.height)
+            bitmap.recycle()
+        }
+
+        samplePhotoFile.delete()
+    }
+
+    @Test
+    fun testStorySlipMissingPhotoFailsExplicitly() {
+        val trip = Trip(id = 504L, name = "Harihar", destination = "Nashik", date = "2026-08-23")
+        val stamp = TravelStamp(
+            id = 504L,
+            tripId = 504L,
+            stampNumber = 23L,
+            stampCode = "#023",
+            title = "Harihar",
+            destination = "Nashik",
+            dateText = "23 AUG 2026",
+            peopleCount = 2,
+            momentsCount = 0
+        )
+
+        val nullConfig = PosterRenderConfig(
+            template = PosterTemplate.STORY_SLIP,
+            format = StampEditionFormat.PORTRAIT,
+            photoUri = null
+        )
+        val nullResult = PosterRenderer.render(context, trip, stamp, nullConfig)
+        assertTrue("Render with null photoUri must return Failure", nullResult is PosterRenderResult.Failure)
     }
 }
