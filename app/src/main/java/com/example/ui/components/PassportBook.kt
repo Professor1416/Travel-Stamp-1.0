@@ -27,6 +27,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.example.ui.theme.PassportBorder
+import com.example.ui.theme.PassportOutline
+import com.example.ui.theme.PassportPaper
+import com.example.ui.theme.PassportTextPrimary
+import com.example.ui.theme.PassportTextSecondary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -196,8 +201,8 @@ fun PassportPage(
 ) {
     BoxWithConstraints(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)), RoundedCornerShape(20.dp))
+            .background(PassportPaper, RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.2.dp, PassportBorder.copy(alpha = 0.6f)), RoundedCornerShape(20.dp))
             .padding(18.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -238,7 +243,7 @@ fun PassportPage(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.8.sp
                     ),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                    color = PassportTextPrimary.copy(alpha = 0.85f)
                 )
                 Text(
                     text = "OFFICIAL RECORD",
@@ -246,7 +251,7 @@ fun PassportPage(
                         fontSize = 8.sp,
                         letterSpacing = 1.2.sp
                     ),
-                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+                    color = PassportBorder.copy(alpha = 0.9f)
                 )
             }
 
@@ -306,7 +311,7 @@ fun PassportPage(
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp
                 ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                color = PassportTextSecondary.copy(alpha = 0.75f),
                 modifier = Modifier.padding(bottom = 4.dp)
             )
         }
@@ -357,14 +362,14 @@ fun PassportStampSlot(
                     .size(stampSize * 0.82f)
                     .border(
                         width = 1.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        color = PassportOutline.copy(alpha = 0.5f),
                         shape = RoundedCornerShape(percent = 50)
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "★",
-                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
+                    color = PassportBorder.copy(alpha = 0.5f),
                     fontSize = 14.sp
                 )
             }
@@ -379,8 +384,8 @@ fun EmptyPassportPage(
 ) {
     Box(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)), RoundedCornerShape(20.dp))
+            .background(PassportPaper, RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.2.dp, PassportBorder.copy(alpha = 0.6f)), RoundedCornerShape(20.dp))
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -406,7 +411,7 @@ fun EmptyPassportPage(
                     fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Bold
                 ),
-                color = MaterialTheme.colorScheme.onSurface,
+                color = PassportTextPrimary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.testTag("empty_passport_title")
             )
@@ -416,7 +421,7 @@ fun EmptyPassportPage(
             Text(
                 text = "Complete your first journey to earn your first Travel Stamp.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = PassportTextSecondary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.testTag("empty_passport_body")
             )

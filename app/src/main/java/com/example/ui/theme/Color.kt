@@ -57,3 +57,11 @@ val TextPrimaryDark = Color(0xFFF4F0E8)           // Warm Cream White
 val TextSecondaryDark = Color(0xFFA8B7B0)         // Readable Sage Gray
 val TextTertiaryDark = Color(0xFF75857E)          // Muted Timestamp Gray
 val TextDisabledDark = Color(0xFF4C5852)
+
+// Stable Theme-Independent Passport Document Palette (Warm Parchment Aesthetic)
+val PassportPaper = Color(0xFFF3ECE0)            // Consistent warm paper base
+val PassportBorder = Color(0xFFB07D46)           // OchreGold
+val PassportTextPrimary = Color(0xFF18201C)      // TextPrimaryLight (Deep Charcoal Ink)
+val PassportTextSecondary = Color(0xFF4F5C55)    // TextSecondaryLight (Muted Forest Slate)
+val PassportOutline = Color(0xFFE5DCcb)          // BorderLight
+
