@@ -14,11 +14,5 @@ enum class PosterTemplate(val title: String, val description: String) {
      * Template B: Passport / Stamp Focused
      * Official stamp is the hero on an authentic passport parchment background.
      */
-    PASSPORT_STAMP("Passport Focus", "Clean passport parchment with hero travel stamp"),
-
-    /**
-     * Template C: Story Slip
-     * User journey photo with official stamp on a polished parchment ticket layout.
-     */
-    STORY_SLIP("Story Slip", "User photo and official stamp on polished parchment ticket layout")
+    PASSPORT_STAMP("Passport Focus", "Clean passport parchment with hero travel stamp")
 }
