@@ -40,6 +40,10 @@ class DirectGeoapifySearchDataSource(
 ) : LocationSearchDataSource {
 
     override suspend fun search(query: String): LocationSearchResult {
+        if (config.apiKey.isBlank()) {
+            return LocationSearchResult.ProviderUnavailable
+        }
+
         val trimmedQuery = query.trim()
         if (trimmedQuery.isEmpty()) {
             return LocationSearchResult.InvalidQuery
@@ -97,8 +101,14 @@ class DirectGeoapifySearchDataSource(
             }
         } catch (e: java.net.SocketTimeoutException) {
             return LocationSearchResult.Timeout
-        } catch (e: java.io.IOException) {
+        } catch (e: java.net.UnknownHostException) {
             return LocationSearchResult.NoNetwork
+        } catch (e: java.net.ConnectException) {
+            return LocationSearchResult.NoNetwork
+        } catch (e: java.net.NoRouteToHostException) {
+            return LocationSearchResult.NoNetwork
+        } catch (e: java.io.IOException) {
+            return LocationSearchResult.ProviderUnavailable
         } catch (e: Exception) {
             return LocationSearchResult.UnknownError(e.message ?: "Unknown exception")
         }

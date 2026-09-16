@@ -28,6 +28,7 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 
 class FakeGeoapifyService : GeoapifyService {
+    var invocationCount = 0
     var lastText: String? = null
     var lastFilter: String? = null
     var lastLimit: Int? = null
@@ -42,6 +43,7 @@ class FakeGeoapifyService : GeoapifyService {
         limit: Int,
         apiKey: String
     ): Response<GeoapifyResponse> {
+        invocationCount++
         lastText = text
         lastFilter = filter
         lastLimit = limit
@@ -295,12 +297,74 @@ class LocationSearchTest {
     }
 
     @Test
-    fun testNetworkIOException() = runBlocking {
-        // 13. network failure -> NoNetwork where distinguishable
-        fakeService.exceptionToThrow = IOException("No internet connection")
+    fun testBlankApiKeyZeroCalls() = runBlocking {
+        val blankConfig = object : GeoapifyConfig {
+            override val apiKey: String = ""
+        }
+        val blankDataSource = DirectGeoapifySearchDataSource(fakeService, blankConfig)
+        val blankRepo = LocationSearchRepositoryImpl(blankDataSource)
 
-        val result = repo.searchLocations("No Network")
+        fakeService.invocationCount = 0
+        val result = blankRepo.searchLocations("Test Query")
+
+        assertEquals(LocationSearchResult.ProviderUnavailable, result)
+        assertEquals(0, fakeService.invocationCount)
+    }
+
+    @Test
+    fun testWhitespaceApiKeyZeroCalls() = runBlocking {
+        val spaceConfig = object : GeoapifyConfig {
+            override val apiKey: String = "   "
+        }
+        val spaceDataSource = DirectGeoapifySearchDataSource(fakeService, spaceConfig)
+        val spaceRepo = LocationSearchRepositoryImpl(spaceDataSource)
+
+        fakeService.invocationCount = 0
+        val result = spaceRepo.searchLocations("Test Query")
+
+        assertEquals(LocationSearchResult.ProviderUnavailable, result)
+        assertEquals(0, fakeService.invocationCount)
+    }
+
+    @Test
+    fun testValidApiKeyAllowsInvocation() = runBlocking {
+        fakeService.invocationCount = 0
+        fakeService.responseToReturn = Response.success(
+            GeoapifyResponse(
+                listOf(
+                    GeoapifyResult("1", "Valid", "Valid", "C", 19.0, 73.0, null)
+                )
+            )
+        )
+
+        val result = repo.searchLocations("Test Query")
+        assertTrue(result is LocationSearchResult.Success)
+        assertEquals(1, fakeService.invocationCount)
+        assertEquals("test-api-key", fakeService.lastApiKey)
+    }
+
+    @Test
+    fun testUnknownHostExceptionMapsToNoNetwork() = runBlocking {
+        fakeService.exceptionToThrow = java.net.UnknownHostException("Unable to resolve host")
+
+        val result = repo.searchLocations("Query")
         assertEquals(LocationSearchResult.NoNetwork, result)
+    }
+
+    @Test
+    fun testConnectExceptionMapsToNoNetwork() = runBlocking {
+        fakeService.exceptionToThrow = java.net.ConnectException("Connection refused")
+
+        val result = repo.searchLocations("Query")
+        assertEquals(LocationSearchResult.NoNetwork, result)
+    }
+
+    @Test
+    fun testGenericIOExceptionMapsToProviderUnavailable() = runBlocking {
+        fakeService.exceptionToThrow = java.io.IOException("Disk read error or broken pipe")
+
+        val result = repo.searchLocations("Query")
+        assertEquals(LocationSearchResult.ProviderUnavailable, result)
     }
 
     @Test

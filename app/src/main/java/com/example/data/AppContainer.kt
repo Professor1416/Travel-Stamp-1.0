@@ -22,6 +22,13 @@ import com.example.data.repository.TravelStampRepository
 import com.example.data.repository.TravelStampRepositoryImpl
 import com.example.data.repository.TripRepository
 import com.example.data.repository.TripRepositoryImpl
+import com.example.data.datasource.GeoapifyConfig
+import com.example.data.datasource.GeoapifyService
+import com.example.data.datasource.DirectGeoapifySearchDataSource
+import okhttp3.OkHttpClient
+import retrofit2.Retrofit
+import retrofit2.converter.moshi.MoshiConverterFactory
+import java.util.concurrent.TimeUnit
 
 interface AppContainer {
     val database: TravelStampDatabase
@@ -80,20 +87,21 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val locationSearchRepository: LocationSearchRepository by lazy {
-        val config = object : com.example.data.datasource.GeoapifyConfig {
+        // TODO: In production, replace DirectGeoapifySearchDataSource with the approved secure proxy/config path.
+        val config = object : GeoapifyConfig {
             override val apiKey: String = ""
         }
-        val okHttpClient = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        val okHttpClient = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
             .build()
-        val retrofit = retrofit2.Retrofit.Builder()
+        val retrofit = Retrofit.Builder()
             .baseUrl("https://api.geoapify.com/")
             .client(okHttpClient)
-            .addConverterFactory(retrofit2.converter.moshi.MoshiConverterFactory.create())
+            .addConverterFactory(MoshiConverterFactory.create())
             .build()
-        val geoapifyService = retrofit.create(com.example.data.datasource.GeoapifyService::class.java)
-        val dataSource = com.example.data.datasource.DirectGeoapifySearchDataSource(geoapifyService, config)
+        val geoapifyService = retrofit.create(GeoapifyService::class.java)
+        val dataSource = DirectGeoapifySearchDataSource(geoapifyService, config)
         LocationSearchRepositoryImpl(dataSource)
     }
 
