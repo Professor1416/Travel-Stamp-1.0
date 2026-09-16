@@ -14,6 +14,8 @@ import com.example.data.repository.LocationSuggestionRepository
 import com.example.data.repository.LocationSuggestionRepositoryImpl
 import com.example.data.repository.JourneyLocationRepository
 import com.example.data.repository.JourneyLocationRepositoryImpl
+import com.example.data.repository.LocationSearchRepository
+import com.example.data.repository.LocationSearchRepositoryImpl
 import com.example.data.repository.MomentRepository
 import com.example.data.repository.MomentRepositoryImpl
 import com.example.data.repository.TravelStampRepository
@@ -30,6 +32,7 @@ interface AppContainer {
     val userPreferencesRepository: UserPreferencesRepository
     val locationSuggestionRepository: LocationSuggestionRepository
     val journeyLocationRepository: JourneyLocationRepository
+    val locationSearchRepository: LocationSearchRepository
     val tripReminderScheduler: TripReminderScheduler
     val reminderCoordinator: ReminderCoordinator
 }
@@ -74,6 +77,24 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val journeyLocationRepository: JourneyLocationRepository by lazy {
         JourneyLocationRepositoryImpl(database.journeyLocationDao())
+    }
+
+    override val locationSearchRepository: LocationSearchRepository by lazy {
+        val config = object : com.example.data.datasource.GeoapifyConfig {
+            override val apiKey: String = ""
+        }
+        val okHttpClient = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        val retrofit = retrofit2.Retrofit.Builder()
+            .baseUrl("https://api.geoapify.com/")
+            .client(okHttpClient)
+            .addConverterFactory(retrofit2.converter.moshi.MoshiConverterFactory.create())
+            .build()
+        val geoapifyService = retrofit.create(com.example.data.datasource.GeoapifyService::class.java)
+        val dataSource = com.example.data.datasource.DirectGeoapifySearchDataSource(geoapifyService, config)
+        LocationSearchRepositoryImpl(dataSource)
     }
 
     override val reminderCoordinator: ReminderCoordinator by lazy {
