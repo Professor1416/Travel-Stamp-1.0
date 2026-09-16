@@ -41,7 +41,8 @@ data class BackupImportResult(
     val importedTrips: Int,
     val importedStamps: Int,
     val importedMoments: Int,
-    val importedChecklistItems: Int
+    val importedChecklistItems: Int,
+    val importedLocations: Int = 0
 )
 
 object BackupManager {
@@ -180,6 +181,25 @@ object BackupManager {
         }
         root.put("stampSequence", seqObj)
 
+        // 6. Journey Locations
+        val locations = database.journeyLocationDao().getAllLocationsSync()
+        val locationsArray = JSONArray()
+        locations.forEach { loc ->
+            val obj = JSONObject().apply {
+                put("id", loc.id)
+                put("uuid", loc.uuid)
+                put("tripId", loc.tripId)
+                put("label", loc.label)
+                put("latitude", loc.latitude)
+                put("longitude", loc.longitude)
+                put("sortOrder", loc.sortOrder)
+                put("createdAt", loc.createdAt)
+                put("updatedAt", loc.updatedAt)
+            }
+            locationsArray.put(obj)
+        }
+        root.put("journeyLocations", locationsArray)
+
         root.toString(2)
     }
 
@@ -225,6 +245,7 @@ object BackupManager {
         val trips = database.tripDao().getAllTripsListSync()
         val stamps = database.travelStampDao().getAllStampsListSync()
         val checklistItems = database.checklistDao().getAllItemsListSync()
+        val journeyLocationsCount = database.journeyLocationDao().getAllLocationsSync().size
 
         // 2. Build Manifest
         val manifestObj = JSONObject().apply {
@@ -237,6 +258,7 @@ object BackupManager {
                 put("stamps", stamps.size)
                 put("moments", allMoments.size)
                 put("checklistItems", checklistItems.size)
+                put("journeyLocations", journeyLocationsCount)
                 put("mediaFiles", mediaFilesToBundle.size)
             })
         }
@@ -414,6 +436,7 @@ object BackupManager {
         var importedStamps = 0
         var importedMoments = 0
         var importedChecklistItems = 0
+        var importedLocations = 0
 
         // Parse Trips
         val tripsArray = root.optJSONArray("trips") ?: JSONArray()
@@ -617,6 +640,50 @@ object BackupManager {
             importedStamps++
         }
 
+        // Parse Journey Locations
+        val locationsArray = root.optJSONArray("journeyLocations") ?: JSONArray()
+        for (i in 0 until locationsArray.length()) {
+            try {
+                val obj = locationsArray.getJSONObject(i)
+                val oldTripId = obj.getLong("tripId")
+                val newTripId = oldToNewTripIdMap[oldTripId] ?: continue
+                val locationUuid = obj.optString("uuid", UUID.randomUUID().toString())
+
+                val label = obj.getString("label")
+                val latitude = obj.getDouble("latitude")
+                val longitude = obj.getDouble("longitude")
+
+                // Robust validation to skip malformed records without failing the entire backup
+                if (!com.example.data.util.JourneyLocationValidator.isValid(label, latitude, longitude)) {
+                    continue
+                }
+
+                val existingLocations = database.journeyLocationDao().getLocationsForTripSync(newTripId)
+                val existingLoc = existingLocations.firstOrNull { it.uuid == locationUuid }
+
+                val locEntity = com.example.data.local.entity.JourneyLocationEntity(
+                    id = existingLoc?.id ?: 0,
+                    uuid = locationUuid,
+                    tripId = newTripId,
+                    label = label,
+                    latitude = latitude,
+                    longitude = longitude,
+                    sortOrder = obj.optInt("sortOrder", i),
+                    createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                    updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                )
+
+                if (existingLoc != null) {
+                    database.journeyLocationDao().updateLocation(locEntity)
+                } else {
+                    database.journeyLocationDao().insertLocation(locEntity)
+                }
+                importedLocations++
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
         // Update stamp sequence counter so future stamps never collide
         val backupSequence = root.optJSONObject("stampSequence")?.optLong("lastAllocatedNumber", 0L) ?: 0L
         val currentMaxDbSeq = database.travelStampDao().getLastAllocatedSequence() ?: 0L
@@ -630,7 +697,8 @@ object BackupManager {
                 importedTrips = importedTrips,
                 importedStamps = importedStamps,
                 importedMoments = importedMoments,
-                importedChecklistItems = importedChecklistItems
+                importedChecklistItems = importedChecklistItems,
+                importedLocations = importedLocations
             )
         )
     }

@@ -7,10 +7,12 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.local.dao.ChecklistDao
+import com.example.data.local.dao.JourneyLocationDao
 import com.example.data.local.dao.MomentDao
 import com.example.data.local.dao.TravelStampDao
 import com.example.data.local.dao.TripDao
 import com.example.data.local.entity.ChecklistItemEntity
+import com.example.data.local.entity.JourneyLocationEntity
 import com.example.data.local.entity.MomentEntity
 import com.example.data.local.entity.StampSequenceEntity
 import com.example.data.local.entity.TravelStampEntity
@@ -22,16 +24,18 @@ import com.example.data.local.entity.TripEntity
         ChecklistItemEntity::class,
         MomentEntity::class,
         TravelStampEntity::class,
-        StampSequenceEntity::class
+        StampSequenceEntity::class,
+        JourneyLocationEntity::class
     ],
-    version = 7,
-    exportSchema = false
+    version = 8,
+    exportSchema = true
 )
 abstract class TravelStampDatabase : RoomDatabase() {
     abstract fun tripDao(): TripDao
     abstract fun checklistDao(): ChecklistDao
     abstract fun momentDao(): MomentDao
     abstract fun travelStampDao(): TravelStampDao
+    abstract fun journeyLocationDao(): JourneyLocationDao
 
     companion object {
         @Volatile
@@ -185,6 +189,26 @@ abstract class TravelStampDatabase : RoomDatabase() {
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_travel_stamps_tripId` ON `travel_stamps` (`tripId`)")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_travel_stamps_stampNumber` ON `travel_stamps` (`stampNumber`)")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_travel_stamps_uuid` ON `travel_stamps` (`uuid`)")
+
+            // 6. Safely upgrade/create journey_locations table
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `journey_locations` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `uuid` TEXT NOT NULL,
+                    `tripId` INTEGER NOT NULL,
+                    `label` TEXT NOT NULL,
+                    `latitude` REAL NOT NULL,
+                    `longitude` REAL NOT NULL,
+                    `sortOrder` INTEGER NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    FOREIGN KEY(`tripId`) REFERENCES `trips`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE 
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_journey_locations_tripId` ON `journey_locations` (`tripId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_journey_locations_uuid` ON `journey_locations` (`uuid`)")
         }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -313,6 +337,48 @@ abstract class TravelStampDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_6_8 = object : Migration(6, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_5_8 = object : Migration(5, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_4_8 = object : Migration(4, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_3_8 = object : Migration(3, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_2_8 = object : Migration(2, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
+        val MIGRATION_1_8 = object : Migration(1, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                performFullMigration(db)
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -320,6 +386,13 @@ abstract class TravelStampDatabase : RoomDatabase() {
             MIGRATION_4_5,
             MIGRATION_5_6,
             MIGRATION_6_7,
+            MIGRATION_7_8,
+            MIGRATION_1_8,
+            MIGRATION_2_8,
+            MIGRATION_3_8,
+            MIGRATION_4_8,
+            MIGRATION_5_8,
+            MIGRATION_6_8,
             MIGRATION_1_7,
             MIGRATION_2_7,
             MIGRATION_3_7,

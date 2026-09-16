@@ -12,6 +12,8 @@ import com.example.data.repository.ChecklistRepository
 import com.example.data.repository.ChecklistRepositoryImpl
 import com.example.data.repository.LocationSuggestionRepository
 import com.example.data.repository.LocationSuggestionRepositoryImpl
+import com.example.data.repository.JourneyLocationRepository
+import com.example.data.repository.JourneyLocationRepositoryImpl
 import com.example.data.repository.MomentRepository
 import com.example.data.repository.MomentRepositoryImpl
 import com.example.data.repository.TravelStampRepository
@@ -27,6 +29,7 @@ interface AppContainer {
     val travelStampRepository: TravelStampRepository
     val userPreferencesRepository: UserPreferencesRepository
     val locationSuggestionRepository: LocationSuggestionRepository
+    val journeyLocationRepository: JourneyLocationRepository
     val tripReminderScheduler: TripReminderScheduler
     val reminderCoordinator: ReminderCoordinator
 }
@@ -67,6 +70,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val locationSuggestionRepository: LocationSuggestionRepository by lazy {
         LocationSuggestionRepositoryImpl(tripRepository)
+    }
+
+    override val journeyLocationRepository: JourneyLocationRepository by lazy {
+        JourneyLocationRepositoryImpl(database.journeyLocationDao())
     }
 
     override val reminderCoordinator: ReminderCoordinator by lazy {
