@@ -107,6 +107,7 @@ class TripDeepLinkRobolectricTest {
 
     @After
     fun tearDown() {
+        vm.clearForTest()
         vm.selectTrip(null)
         vm.clearPendingReminderTripId()
         ShadowLooper.idleMainLooper()

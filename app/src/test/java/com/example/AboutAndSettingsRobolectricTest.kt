@@ -103,6 +103,7 @@ class AboutAndSettingsRobolectricTest {
 
     @After
     fun tearDown() {
+        vm.clearForTest()
         db.close()
     }
 

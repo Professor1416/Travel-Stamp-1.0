@@ -82,6 +82,7 @@ class TripReminderRobolectricTest {
 
     @After
     fun tearDown() {
+        vm.clearForTest()
         db.close()
     }
 

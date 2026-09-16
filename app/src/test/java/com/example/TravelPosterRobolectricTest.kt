@@ -93,6 +93,7 @@ class TravelPosterRobolectricTest {
 
     @After
     fun teardown() {
+        vm.clearForTest()
         db.close()
     }
 

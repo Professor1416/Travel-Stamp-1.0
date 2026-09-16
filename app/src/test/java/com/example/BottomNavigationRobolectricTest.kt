@@ -107,6 +107,7 @@ class BottomNavigationRobolectricTest {
 
     @After
     fun tearDown() {
+        vm.clearForTest()
         db.close()
     }
 

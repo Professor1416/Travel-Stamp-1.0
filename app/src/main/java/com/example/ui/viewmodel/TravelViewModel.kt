@@ -45,7 +45,26 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.example.data.model.JourneyLocation
+import com.example.data.model.LocationSearchCandidate
+import com.example.data.model.LocationSearchResult
+import com.example.data.repository.JourneyLocationRepository
+import com.example.data.repository.JourneyLocationRepositoryImpl
+import com.example.data.repository.LocationSearchRepository
 import java.io.File
+
+sealed interface LocationSearchUiState {
+    object Idle : LocationSearchUiState
+    object Loading : LocationSearchUiState
+    data class Success(val candidates: List<LocationSearchCandidate>) : LocationSearchUiState
+    object NoResults : LocationSearchUiState
+    object NoNetwork : LocationSearchUiState
+    object Timeout : LocationSearchUiState
+    object RateLimited : LocationSearchUiState
+    object ProviderUnavailable : LocationSearchUiState
+    object InvalidQuery : LocationSearchUiState
+    data class UnknownError(val message: String?) : LocationSearchUiState
+}
 
 sealed interface FinishTripUiState {
     object Idle : FinishTripUiState
@@ -63,8 +82,135 @@ class TravelViewModel(
     private val userPreferencesRepository: UserPreferencesRepository,
     private val database: TravelStampDatabase,
     private val locationSuggestionRepository: LocationSuggestionRepository = LocationSuggestionRepositoryImpl(tripRepository),
-    private val reminderCoordinator: ReminderCoordinator? = null
+    private val reminderCoordinator: ReminderCoordinator? = null,
+    journeyLocationRepositoryParam: JourneyLocationRepository? = null,
+    locationSearchRepositoryParam: LocationSearchRepository? = null
 ) : ViewModel() {
+
+    private val journeyLocationRepository: JourneyLocationRepository =
+        journeyLocationRepositoryParam ?: JourneyLocationRepositoryImpl(database.journeyLocationDao())
+
+    private val locationSearchRepository: LocationSearchRepository? =
+        locationSearchRepositoryParam
+
+    // Search Location UX State
+    private val _searchUiState = MutableStateFlow<LocationSearchUiState>(LocationSearchUiState.Idle)
+    val searchUiState: StateFlow<LocationSearchUiState> = _searchUiState.asStateFlow()
+
+    private var activeSearchJob: Job? = null
+
+    // Location operation concurrency and spam guard state
+    private val _isLocationOperationProcessing = MutableStateFlow(false)
+    val isLocationOperationProcessing: StateFlow<Boolean> = _isLocationOperationProcessing.asStateFlow()
+
+    fun searchLocations(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) {
+            _searchUiState.value = LocationSearchUiState.InvalidQuery
+            return
+        }
+
+        // Cancel previous search job to prevent duplicate/stale responses
+        activeSearchJob?.cancel()
+
+        _searchUiState.value = LocationSearchUiState.Loading
+
+        activeSearchJob = viewModelScope.launch {
+            try {
+                val repo = locationSearchRepository
+                if (repo == null) {
+                    _searchUiState.value = LocationSearchUiState.ProviderUnavailable
+                    return@launch
+                }
+                val result = repo.searchLocations(trimmed)
+                // Map repository results directly to UI state
+                _searchUiState.value = when (result) {
+                    is LocationSearchResult.Success -> LocationSearchUiState.Success(result.candidates)
+                    LocationSearchResult.NoResults -> LocationSearchUiState.NoResults
+                    LocationSearchResult.NoNetwork -> LocationSearchUiState.NoNetwork
+                    LocationSearchResult.Timeout -> LocationSearchUiState.Timeout
+                    LocationSearchResult.RateLimited -> LocationSearchUiState.RateLimited
+                    LocationSearchResult.ProviderUnavailable -> LocationSearchUiState.ProviderUnavailable
+                    LocationSearchResult.InvalidQuery -> LocationSearchUiState.InvalidQuery
+                    is LocationSearchResult.UnknownError -> LocationSearchUiState.UnknownError(result.message)
+                }
+            } catch (e: Exception) {
+                _searchUiState.value = LocationSearchUiState.UnknownError(e.message)
+            }
+        }
+    }
+
+    fun clearSearchState() {
+        activeSearchJob?.cancel()
+        _searchUiState.value = LocationSearchUiState.Idle
+    }
+
+    fun addJourneyLocation(tripId: Long, candidate: LocationSearchCandidate, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        if (_isLocationOperationProcessing.value) return
+        _isLocationOperationProcessing.value = true
+        viewModelScope.launch {
+            try {
+                val existingList = journeyLocationRepository.getLocationsForTripSync(tripId)
+                val nextSortOrder = (existingList.maxOfOrNull { it.sortOrder } ?: 0) + 1
+                val newLoc = JourneyLocation(
+                    tripId = tripId,
+                    label = candidate.label,
+                    latitude = candidate.latitude,
+                    longitude = candidate.longitude,
+                    sortOrder = nextSortOrder
+                )
+                journeyLocationRepository.insertLocation(newLoc)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to save location")
+            } finally {
+                _isLocationOperationProcessing.value = false
+            }
+        }
+    }
+
+    fun updateJourneyLocation(
+        locationId: Long,
+        candidate: LocationSearchCandidate,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        if (_isLocationOperationProcessing.value) return
+        _isLocationOperationProcessing.value = true
+        viewModelScope.launch {
+            try {
+                val allLocations = journeyLocationRepository.getAllLocationsSync()
+                val existingLoc = allLocations.find { it.id == locationId }
+                if (existingLoc != null) {
+                    val updatedLoc = existingLoc.copy(
+                        label = candidate.label,
+                        latitude = candidate.latitude,
+                        longitude = candidate.longitude,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    journeyLocationRepository.updateLocation(updatedLoc)
+                    onSuccess()
+                } else {
+                    onError("Location not found")
+                }
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to update location")
+            } finally {
+                _isLocationOperationProcessing.value = false
+            }
+        }
+    }
+
+    fun removeJourneyLocation(locationId: Long, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                journeyLocationRepository.deleteLocationById(locationId)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to delete location")
+            }
+        }
+    }
 
     val hasCompletedOnboarding: StateFlow<Boolean> = userPreferencesRepository.hasCompletedOnboarding
     val themeMode: StateFlow<AppThemeMode> = userPreferencesRepository.themeMode
@@ -110,14 +256,14 @@ class TravelViewModel(
     val allTrips: StateFlow<List<Trip>> = tripRepository.getAllTrips()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = emptyList()
         )
 
     val activeTrips: StateFlow<List<Trip>> = tripRepository.getActiveTrips()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = emptyList()
         )
 
@@ -126,7 +272,7 @@ class TravelViewModel(
     val completedTrips: StateFlow<List<Trip>> = tripRepository.getCompletedTrips()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = emptyList()
         )
 
@@ -135,21 +281,21 @@ class TravelViewModel(
     val stamps: StateFlow<List<TravelStamp>> = travelStampRepository.getAllStamps()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = emptyList()
         )
 
     val totalMomentsCount: StateFlow<Int> = momentRepository.getTotalMomentsCount()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = 0
         )
 
     val completedTripsCount: StateFlow<Int> = tripRepository.getCompletedTripsCount()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = 0
         )
 
@@ -163,7 +309,7 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = null
         )
 
@@ -173,7 +319,17 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = emptyList()
+        )
+
+    val currentTripLocations: StateFlow<List<JourneyLocation>> = _selectedTripId
+        .flatMapLatest { id ->
+            if (id != null) journeyLocationRepository.observeLocationsForTrip(id) else flowOf(emptyList())
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
             initialValue = emptyList()
         )
 
@@ -183,7 +339,7 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = emptyList()
         )
 
@@ -193,7 +349,7 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(),
             initialValue = null
         )
 
@@ -729,6 +885,10 @@ class TravelViewModel(
         }
     }
 
+    fun clearForTest() {
+        viewModelScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+    }
+
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
@@ -742,7 +902,9 @@ class TravelViewModel(
                     userPreferencesRepository = appContainer.userPreferencesRepository,
                     database = appContainer.database,
                     locationSuggestionRepository = appContainer.locationSuggestionRepository,
-                    reminderCoordinator = appContainer.reminderCoordinator
+                    reminderCoordinator = appContainer.reminderCoordinator,
+                    journeyLocationRepositoryParam = appContainer.journeyLocationRepository,
+                    locationSearchRepositoryParam = appContainer.locationSearchRepository
                 )
             }
         }

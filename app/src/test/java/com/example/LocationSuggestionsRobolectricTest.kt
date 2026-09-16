@@ -74,6 +74,7 @@ class LocationSuggestionsRobolectricTest {
 
     @After
     fun tearDown() {
+        vm.clearForTest()
         db.close()
     }
 

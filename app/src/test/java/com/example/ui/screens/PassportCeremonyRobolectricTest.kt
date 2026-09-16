@@ -93,6 +93,7 @@ class PassportCeremonyRobolectricTest {
 
     @After
     fun tearDown() {
+        vm.clearForTest()
         db.close()
     }
 

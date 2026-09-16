@@ -138,6 +138,8 @@ fun TripCardScreen(
     onViewStampClick: (Long) -> Unit,
     onCreatePosterClick: (Long) -> Unit = {},
     onEditMomentClick: ((tripId: Long, momentId: Long) -> Unit)? = null,
+    onAddLocationClick: (Long) -> Unit = {},
+    onEditLocationClick: (Long, Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -345,7 +347,8 @@ fun TripCardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = Spacing.screenHorizontal),
+                .padding(horizontal = Spacing.screenHorizontal)
+                .testTag("trip_card_lazy_column"),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl)
         ) {
             // 1. Trip Card Ticket Hero
@@ -550,6 +553,177 @@ fun TripCardScreen(
                             }
                         }
                     }
+                }
+            }
+
+            // MAP LOCATIONS Section
+            item {
+                val locations by viewModel.currentTripLocations.collectAsStateWithLifecycle()
+                var locationToDelete by remember { mutableStateOf<com.example.data.model.JourneyLocation?>(null) }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("journey_map_locations_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    ) {
+                        Text(
+                            text = "MAP LOCATIONS",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 1.sp
+                        )
+
+                        if (locations.isEmpty()) {
+                            Text(
+                                text = "No map locations added",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("no_locations_text")
+                            )
+
+                            Button(
+                                onClick = {
+                                    onAddLocationClick(currentTrip.id)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("add_location_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.xs))
+                                Text("Add location", style = MaterialTheme.typography.labelLarge)
+                            }
+                        } else {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                            ) {
+                                locations.forEach { location ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = Spacing.xs)
+                                            .testTag("location_item_${location.id}"),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = location.label,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Edit",
+                                                color = MaterialTheme.colorScheme.primary,
+                                                style = MaterialTheme.typography.labelLarge,
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        onEditLocationClick(currentTrip.id, location.id)
+                                                    }
+                                                    .padding(Spacing.xs)
+                                                    .testTag("edit_location_${location.id}")
+                                            )
+
+                                            Text(
+                                                text = "Remove",
+                                                color = MaterialTheme.colorScheme.error,
+                                                style = MaterialTheme.typography.labelLarge,
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        locationToDelete = location
+                                                    }
+                                                    .padding(Spacing.xs)
+                                                    .testTag("remove_location_${location.id}")
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(Spacing.xs))
+
+                            TextButton(
+                                onClick = {
+                                    onAddLocationClick(currentTrip.id)
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .testTag("add_another_location_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.xs))
+                                Text("Add another location", style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                    }
+                }
+
+                // Delete confirmation Dialog
+                locationToDelete?.let { loc ->
+                    AlertDialog(
+                        onDismissRequest = { locationToDelete = null },
+                        title = { Text("Remove location?") },
+                        text = {
+                            Text("This removes the location from your journey's map data.\nYour journey and Travel Stamp will not be affected.")
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    viewModel.removeJourneyLocation(loc.id)
+                                    locationToDelete = null
+                                },
+                                modifier = Modifier.testTag("confirm_remove_location_button")
+                            ) {
+                                Text("Remove", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = { locationToDelete = null },
+                                modifier = Modifier.testTag("cancel_remove_location_button")
+                            ) {
+                                Text("Cancel")
+                            }
+                        },
+                        modifier = Modifier.testTag("remove_location_dialog")
+                    )
                 }
             }
 

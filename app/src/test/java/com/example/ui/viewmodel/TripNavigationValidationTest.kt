@@ -89,6 +89,7 @@ class TripNavigationValidationTest {
 
     @After
     fun tearDown() {
+        vm.clearForTest()
         db.close()
     }
 

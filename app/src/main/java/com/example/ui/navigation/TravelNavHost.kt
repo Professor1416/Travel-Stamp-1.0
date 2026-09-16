@@ -31,6 +31,7 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.PassportCeremonyScreen
 import com.example.ui.screens.PosterExportScreen
+import com.example.ui.screens.LocationSearchScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TravelStampScreen
 import com.example.ui.screens.TripCardScreen
@@ -50,6 +51,8 @@ object Destinations {
     const val SETTINGS = "settings"
     const val ABOUT = "about"
     const val POSTER_EXPORT = "poster_export/{tripId}?format={format}&template={template}"
+    const val ADD_LOCATION = "add_location/{tripId}"
+    const val EDIT_LOCATION = "edit_location/{tripId}/{locationId}"
 
     fun tripCard(tripId: Long) = "trip_card/$tripId"
     fun addMoment(tripId: Long) = "add_moment/$tripId"
@@ -57,6 +60,8 @@ object Destinations {
     fun finishTrip(tripId: Long) = "finish_trip/$tripId"
     fun passportCeremony(tripId: Long) = "passport_ceremony/$tripId"
     fun travelStamp(tripId: Long) = "travel_stamp/$tripId"
+    fun addLocation(tripId: Long) = "add_location/$tripId"
+    fun editLocation(tripId: Long, locationId: Long) = "edit_location/$tripId/$locationId"
     fun posterExport(
         tripId: Long,
         format: StampEditionFormat = StampEditionFormat.PORTRAIT,
@@ -218,6 +223,12 @@ fun TravelNavHost(
                     },
                     onCreatePosterClick = { id ->
                         navController.navigate(Destinations.posterExport(id))
+                    },
+                    onAddLocationClick = { id ->
+                        navController.navigate(Destinations.addLocation(id))
+                    },
+                    onEditLocationClick = { tripIdParam, locationIdParam ->
+                        navController.navigate(Destinations.editLocation(tripIdParam, locationIdParam))
                     }
                 )
             }
@@ -252,6 +263,36 @@ fun TravelNavHost(
                     onNavigateBack = {
                         navController.popBackStack()
                     }
+                )
+            }
+
+            composable(
+                route = Destinations.ADD_LOCATION,
+                arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                LocationSearchScreen(
+                    tripId = tripId,
+                    locationId = null,
+                    viewModel = viewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = Destinations.EDIT_LOCATION,
+                arguments = listOf(
+                    navArgument("tripId") { type = NavType.LongType },
+                    navArgument("locationId") { type = NavType.LongType }
+                )
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getLong("tripId") ?: return@composable
+                val locationId = backStackEntry.arguments?.getLong("locationId") ?: return@composable
+                LocationSearchScreen(
+                    tripId = tripId,
+                    locationId = locationId,
+                    viewModel = viewModel,
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
 
