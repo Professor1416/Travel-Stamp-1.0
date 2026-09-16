@@ -27,7 +27,7 @@ interface JourneyLocationDao {
     """)
     fun observeAllActiveLocations(): Flow<List<JourneyLocationEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertLocation(location: JourneyLocationEntity): Long
 
     @Update

@@ -32,6 +32,7 @@ class JourneyLocationTest {
 
     private lateinit var db: TravelStampDatabase
     private lateinit var stampRepo: TravelStampRepositoryImpl
+    private lateinit var journeyRepo: com.example.data.repository.JourneyLocationRepositoryImpl
 
     @Before
     fun setUp() {
@@ -40,6 +41,7 @@ class JourneyLocationTest {
             .allowMainThreadQueries()
             .build()
         stampRepo = TravelStampRepositoryImpl(db.travelStampDao())
+        journeyRepo = com.example.data.repository.JourneyLocationRepositoryImpl(db.journeyLocationDao())
     }
 
     @After
@@ -740,6 +742,377 @@ class JourneyLocationTest {
             assertEquals(stampUuidBefore, refreshedStamp!!.uuid)
             assertEquals(stampNumberBefore, refreshedStamp.stampNumber)
             assertEquals(stampCodeBefore, refreshedStamp.stampCode)
+        }
+    }
+
+    // --- Journey Location Write-Path Hardening Tests ---
+
+    @Test
+    fun testValidLocationInsertsSuccessfully() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Bari Village Base",
+                latitude = 19.5843,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            val id = journeyRepo.insertLocation(location)
+            assertTrue(id > 0)
+
+            val retrieved = journeyRepo.getLocationsForTripSync(tripId)
+            assertEquals(1, retrieved.size)
+            assertEquals("Bari Village Base", retrieved[0].label)
+            assertEquals(19.5843, retrieved[0].latitude, 0.0001)
+            assertEquals(73.7124, retrieved[0].longitude, 0.0001)
+        }
+    }
+
+    @Test
+    fun testBlankLabelIsRejectedBeforeDaoWrite() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "   ",
+                latitude = 19.5843,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for blank label")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+
+            // Verify database is unchanged
+            val retrieved = journeyRepo.getLocationsForTripSync(tripId)
+            assertTrue(retrieved.isEmpty())
+        }
+    }
+
+    @Test
+    fun testNaNLatitudeRejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Summit",
+                latitude = Double.NaN,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for NaN latitude")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+            assertTrue(journeyRepo.getLocationsForTripSync(tripId).isEmpty())
+        }
+    }
+
+    @Test
+    fun testNaNLongitudeRejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Summit",
+                latitude = 19.5843,
+                longitude = Double.NaN,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for NaN longitude")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+            assertTrue(journeyRepo.getLocationsForTripSync(tripId).isEmpty())
+        }
+    }
+
+    @Test
+    fun testInfiniteLatitudeRejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Summit",
+                latitude = Double.POSITIVE_INFINITY,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for infinite latitude")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+            assertTrue(journeyRepo.getLocationsForTripSync(tripId).isEmpty())
+        }
+    }
+
+    @Test
+    fun testInfiniteLongitudeRejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Summit",
+                latitude = 19.5843,
+                longitude = Double.NEGATIVE_INFINITY,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for infinite longitude")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+            assertTrue(journeyRepo.getLocationsForTripSync(tripId).isEmpty())
+        }
+    }
+
+    @Test
+    fun testLatitudeGreaterThan90Rejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Summit",
+                latitude = 90.0001,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for latitude > 90")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+            assertTrue(journeyRepo.getLocationsForTripSync(tripId).isEmpty())
+        }
+    }
+
+    @Test
+    fun testLatitudeLessThanMinus90Rejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Summit",
+                latitude = -90.0001,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for latitude < -90")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+            assertTrue(journeyRepo.getLocationsForTripSync(tripId).isEmpty())
+        }
+    }
+
+    @Test
+    fun testLongitudeGreaterThan180Rejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Summit",
+                latitude = 19.5843,
+                longitude = 180.0001,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for longitude > 180")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+            assertTrue(journeyRepo.getLocationsForTripSync(tripId).isEmpty())
+        }
+    }
+
+    @Test
+    fun testLongitudeLessThanMinus180Rejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Summit",
+                latitude = 19.5843,
+                longitude = -180.0001,
+                sortOrder = 0
+            )
+            try {
+                journeyRepo.insertLocation(location)
+                fail("Should have thrown IllegalArgumentException for longitude < -180")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+            assertTrue(journeyRepo.getLocationsForTripSync(tripId).isEmpty())
+        }
+    }
+
+    @Test
+    fun testInvalidUpdateIsRejected() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Valid Base",
+                latitude = 19.5843,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            val id = journeyRepo.insertLocation(location)
+
+            val invalidUpdate = location.copy(id = id, label = "  ")
+            try {
+                journeyRepo.updateLocation(invalidUpdate)
+                fail("Should have thrown IllegalArgumentException on updating invalid label")
+            } catch (e: IllegalArgumentException) {
+                // Expected
+            }
+
+            // Verify old label is preserved unchanged
+            val retrieved = journeyRepo.getLocationsForTripSync(tripId)
+            assertEquals(1, retrieved.size)
+            assertEquals("Valid Base", retrieved[0].label)
+        }
+    }
+
+    @Test
+    fun testValidUpdateSucceeds() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val location = JourneyLocation(
+                tripId = tripId,
+                label = "Valid Base",
+                latitude = 19.5843,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            val id = journeyRepo.insertLocation(location)
+
+            val validUpdate = location.copy(id = id, label = "Summit Peak - Super Peak", latitude = 19.5900, longitude = 73.7200)
+            journeyRepo.updateLocation(validUpdate)
+
+            val retrieved = journeyRepo.getLocationsForTripSync(tripId)
+            assertEquals(1, retrieved.size)
+            assertEquals("Summit Peak - Super Peak", retrieved[0].label)
+            assertEquals(19.5900, retrieved[0].latitude, 0.0001)
+            assertEquals(73.7200, retrieved[0].longitude, 0.0001)
+        }
+    }
+
+    @Test
+    fun testDuplicateCoordinatesWithDifferentUuidsRemainAllowed() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val locA = JourneyLocation(
+                uuid = "uuid-loc-a",
+                tripId = tripId,
+                label = "Location A",
+                latitude = 19.5843,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            val locB = JourneyLocation(
+                uuid = "uuid-loc-b",
+                tripId = tripId,
+                label = "Location B",
+                latitude = 19.5843,
+                longitude = 73.7124,
+                sortOrder = 1
+            )
+
+            val idA = journeyRepo.insertLocation(locA)
+            val idB = journeyRepo.insertLocation(locB)
+
+            assertTrue(idA > 0)
+            assertTrue(idB > 0)
+            assertNotEquals(idA, idB)
+
+            val retrieved = journeyRepo.getLocationsForTripSync(tripId)
+            assertEquals(2, retrieved.size)
+            assertEquals("Location A", retrieved[0].label)
+            assertEquals("Location B", retrieved[1].label)
+        }
+    }
+
+    @Test
+    fun testDuplicateUuidInsertionDoesNotSilentlyReplaceExistingData() {
+        runBlocking {
+            val tripId = db.tripDao().insertTrip(
+                TripEntity(name = "Kalsubai Peak", destination = "Bari", date = "20 Aug 2026", status = "IN_PROGRESS")
+            )
+            val firstLoc = JourneyLocation(
+                uuid = "unique-uuid-conflict",
+                tripId = tripId,
+                label = "First Entry",
+                latitude = 19.5843,
+                longitude = 73.7124,
+                sortOrder = 0
+            )
+            journeyRepo.insertLocation(firstLoc)
+
+            val secondLoc = JourneyLocation(
+                uuid = "unique-uuid-conflict",
+                tripId = tripId,
+                label = "Attempted Silent Replace Entry",
+                latitude = 19.9999,
+                longitude = 73.9999,
+                sortOrder = 1
+            )
+
+            try {
+                journeyRepo.insertLocation(secondLoc)
+                fail("Inserting duplicate UUID with OnConflictStrategy.ABORT should throw SQLiteConstraintException")
+            } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                // Expected SQLiteConstraintException or general Room failure exception
+            } catch (e: Exception) {
+                // Accept any generic DB constraint exception
+            }
+
+            // Verify the original data was NOT silently replaced/modified and exists intact
+            val retrieved = journeyRepo.getLocationsForTripSync(tripId)
+            assertEquals(1, retrieved.size)
+            assertEquals("First Entry", retrieved[0].label)
+            assertEquals(19.5843, retrieved[0].latitude, 0.0001)
         }
     }
 }

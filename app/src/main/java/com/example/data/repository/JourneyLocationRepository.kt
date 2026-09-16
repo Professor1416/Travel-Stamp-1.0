@@ -42,10 +42,16 @@ class JourneyLocationRepositoryImpl(
     }
 
     override suspend fun insertLocation(location: JourneyLocation): Long {
+        if (!com.example.data.util.JourneyLocationValidator.isValid(location)) {
+            throw IllegalArgumentException("Invalid journey location")
+        }
         return journeyLocationDao.insertLocation(JourneyLocationEntity.fromDomain(location))
     }
 
     override suspend fun updateLocation(location: JourneyLocation) {
+        if (!com.example.data.util.JourneyLocationValidator.isValid(location)) {
+            throw IllegalArgumentException("Invalid journey location")
+        }
         journeyLocationDao.updateLocation(JourneyLocationEntity.fromDomain(location))
     }
 
