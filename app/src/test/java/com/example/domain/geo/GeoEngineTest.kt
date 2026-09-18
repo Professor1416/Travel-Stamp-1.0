@@ -295,7 +295,8 @@ class GeoEngineTest {
         // 26. projected min bounds -> normalized 0,0
         val pt = ProjectedPoint(-5.0, -5.0)
         val norm = GeoEngine.normalize(pt, bounds)
-        assertEquals(0.0, norm.x, 1e-9)
+        assertNotNull(norm)
+        assertEquals(0.0, norm!!.x, 1e-9)
         assertEquals(0.0, norm.y, 1e-9)
     }
 
@@ -304,7 +305,8 @@ class GeoEngineTest {
         // 27. projected max bounds -> normalized 1,1
         val pt = ProjectedPoint(5.0, 5.0)
         val norm = GeoEngine.normalize(pt, bounds)
-        assertEquals(1.0, norm.x, 1e-9)
+        assertNotNull(norm)
+        assertEquals(1.0, norm!!.x, 1e-9)
         assertEquals(1.0, norm.y, 1e-9)
     }
 
@@ -313,7 +315,8 @@ class GeoEngineTest {
         // 28. center -> expected normalized value
         val pt = ProjectedPoint(0.0, 0.0)
         val norm = GeoEngine.normalize(pt, bounds)
-        assertEquals(0.5, norm.x, 1e-9)
+        assertNotNull(norm)
+        assertEquals(0.5, norm!!.x, 1e-9)
         assertEquals(0.5, norm.y, 1e-9)
     }
 
@@ -322,20 +325,66 @@ class GeoEngineTest {
         // 29. outside bounds is NOT silently clamped
         val pt = ProjectedPoint(10.0, -10.0)
         val norm = GeoEngine.normalize(pt, bounds)
+        assertNotNull(norm)
         // xNorm = (10 - (-5)) / 10 = 1.5
         // yNorm = (-10 - (-5)) / 10 = -0.5
-        assertEquals(1.5, norm.x, 1e-9)
+        assertEquals(1.5, norm!!.x, 1e-9)
         assertEquals(-0.5, norm.y, 1e-9)
     }
 
     @Test
     fun testInvalidDegenerateBoundsHandledSafely() {
-        // 30. invalid/degenerate bounds handled safely
+        // 30. invalid/degenerate bounds handled safely (returns null)
         val badBounds = ProjectedBounds(0.0, 0.0, -2.0, -2.0)
         val pt = ProjectedPoint(1.0, 1.0)
         val norm = GeoEngine.normalize(pt, badBounds)
-        assertEquals(0.0, norm.x, 1e-9)
-        assertEquals(0.0, norm.y, 1e-9)
+        assertNull(norm)
+    }
+
+    @Test
+    fun testZeroWidthBoundsFail() {
+        // Zero-width bounds must fail (return null)
+        val badBounds = ProjectedBounds(5.0, 0.0, 5.0, 10.0)
+        val pt = ProjectedPoint(5.0, 5.0)
+        assertNull(GeoEngine.normalize(pt, badBounds))
+    }
+
+    @Test
+    fun testZeroHeightBoundsFail() {
+        // Zero-height bounds must fail (return null)
+        val badBounds = ProjectedBounds(0.0, 5.0, 10.0, 5.0)
+        val pt = ProjectedPoint(5.0, 5.0)
+        assertNull(GeoEngine.normalize(pt, badBounds))
+    }
+
+    @Test
+    fun testNanBoundsFail() {
+        // NaN bounds must fail (return null)
+        val badBounds = ProjectedBounds(Double.NaN, 0.0, 10.0, 10.0)
+        val pt = ProjectedPoint(5.0, 5.0)
+        assertNull(GeoEngine.normalize(pt, badBounds))
+    }
+
+    @Test
+    fun testInfiniteBoundsFail() {
+        // Infinite bounds must fail (return null)
+        val badBounds = ProjectedBounds(Double.NEGATIVE_INFINITY, 0.0, 10.0, 10.0)
+        val pt = ProjectedPoint(5.0, 5.0)
+        assertNull(GeoEngine.normalize(pt, badBounds))
+    }
+
+    @Test
+    fun testNanProjectedPointFail() {
+        // NaN projected points must fail (return null)
+        val pt = ProjectedPoint(Double.NaN, 5.0)
+        assertNull(GeoEngine.normalize(pt, bounds))
+    }
+
+    @Test
+    fun testInfiniteProjectedPointFail() {
+        // Infinite projected points must fail (return null)
+        val pt = ProjectedPoint(Double.POSITIVE_INFINITY, 5.0)
+        assertNull(GeoEngine.normalize(pt, bounds))
     }
 
 

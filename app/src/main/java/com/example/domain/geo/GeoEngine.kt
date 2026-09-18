@@ -190,13 +190,22 @@ object GeoEngine {
 
     /**
      * Normalizes a projected coordinate into 0.0..1.0 range based on explicit bounds.
+     * Returns null if any coordinate or bound is non-finite, if bounds are degenerate/invalid,
+     * or if ranges are zero or negative.
      */
-    fun normalize(pt: ProjectedPoint, bounds: ProjectedBounds): NormalizedPoint {
+    fun normalize(pt: ProjectedPoint, bounds: ProjectedBounds): NormalizedPoint? {
+        if (!bounds.minX.isFinite() || !bounds.maxX.isFinite() || !bounds.minY.isFinite() || !bounds.maxY.isFinite()) {
+            return null
+        }
+        if (!pt.x.isFinite() || !pt.y.isFinite()) {
+            return null
+        }
+
         val rangeX = bounds.maxX - bounds.minX
         val rangeY = bounds.maxY - bounds.minY
 
         if (rangeX <= 0.0 || rangeY <= 0.0) {
-            return NormalizedPoint(0.0, 0.0)
+            return null
         }
 
         val xNorm = (pt.x - bounds.minX) / rangeX
