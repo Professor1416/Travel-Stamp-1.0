@@ -15,6 +15,16 @@ interface TravelStampDao {
     @Query("SELECT * FROM travel_stamps ORDER BY stampNumber DESC, issuedAt DESC")
     fun getAllStamps(): Flow<List<TravelStampEntity>>
 
+    @Query("""
+        SELECT s.*
+        FROM travel_stamps AS s
+        INNER JOIN trips AS t ON s.tripId = t.id
+        WHERE t.deletedAt IS NULL
+          AND s.deletedAt IS NULL
+        ORDER BY s.stampNumber ASC, s.id ASC
+    """)
+    fun observeAllActiveStamps(): Flow<List<TravelStampEntity>>
+
     @Query("SELECT * FROM travel_stamps ORDER BY stampNumber ASC")
     suspend fun getAllStampsListSync(): List<TravelStampEntity>
 

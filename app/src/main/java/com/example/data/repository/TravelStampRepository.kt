@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 
 interface TravelStampRepository {
     fun getAllStamps(): Flow<List<TravelStamp>>
+    fun observeAllActiveStamps(): Flow<List<TravelStamp>>
     fun getStampForTrip(tripId: Long): Flow<TravelStamp?>
     suspend fun getStampForTripSync(tripId: Long): TravelStamp?
     fun getStampById(id: Long): Flow<TravelStamp?>
@@ -61,6 +62,9 @@ class TravelStampRepositoryImpl(
 
     override fun getAllStamps(): Flow<List<TravelStamp>> =
         stampDao.getAllStamps().map { entities -> entities.map { it.toDomain() } }
+
+    override fun observeAllActiveStamps(): Flow<List<TravelStamp>> =
+        stampDao.observeAllActiveStamps().map { entities -> entities.map { it.toDomain() } }
 
     override fun getStampForTrip(tripId: Long): Flow<TravelStamp?> =
         stampDao.getStampForTrip(tripId).map { it?.toDomain() }
