@@ -2,11 +2,10 @@ package com.example.data.local
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.example.data.datasource.DirectGeoapifySearchDataSource
-import com.example.data.datasource.GeoapifyConfig
-import com.example.data.datasource.GeoapifyResponse
-import com.example.data.datasource.GeoapifyResult
-import com.example.data.datasource.GeoapifyService
+import com.example.data.datasource.ProxyLocationSearchDataSource
+import com.example.data.datasource.ProxyLocationSearchService
+import com.example.data.datasource.ProxySearchResponse
+import com.example.data.datasource.ProxyCandidate
 import com.example.data.local.entity.JourneyLocationEntity
 import com.example.data.local.entity.TravelStampEntity
 import com.example.data.local.entity.TripEntity
@@ -27,30 +26,19 @@ import retrofit2.Response
 import java.io.IOException
 import java.net.SocketTimeoutException
 
-class FakeGeoapifyService : GeoapifyService {
+class FakeProxyLocationSearchService : ProxyLocationSearchService {
     var invocationCount = 0
-    var lastText: String? = null
-    var lastFilter: String? = null
-    var lastLimit: Int? = null
-    var lastApiKey: String? = null
+    var lastQuery: String? = null
 
-    var responseToReturn: Response<GeoapifyResponse>? = null
+    var responseToReturn: Response<ProxySearchResponse>? = null
     var exceptionToThrow: Exception? = null
 
-    override suspend fun search(
-        text: String,
-        filter: String,
-        limit: Int,
-        apiKey: String
-    ): Response<GeoapifyResponse> {
+    override suspend fun search(query: String): Response<ProxySearchResponse> {
         invocationCount++
-        lastText = text
-        lastFilter = filter
-        lastLimit = limit
-        lastApiKey = apiKey
+        lastQuery = query
 
         exceptionToThrow?.let { throw it }
-        return responseToReturn ?: Response.success(GeoapifyResponse(emptyList()))
+        return responseToReturn ?: Response.success(ProxySearchResponse(emptyList()))
     }
 }
 
@@ -59,9 +47,8 @@ class FakeGeoapifyService : GeoapifyService {
 class LocationSearchTest {
 
     private lateinit var db: TravelStampDatabase
-    private lateinit var fakeService: FakeGeoapifyService
+    private lateinit var fakeService: FakeProxyLocationSearchService
     private lateinit var repo: LocationSearchRepositoryImpl
-    private lateinit var testConfig: GeoapifyConfig
 
     @Before
     fun setUp() {
@@ -72,12 +59,8 @@ class LocationSearchTest {
             .allowMainThreadQueries()
             .build()
 
-        fakeService = FakeGeoapifyService()
-        testConfig = object : GeoapifyConfig {
-            override val apiKey: String = "test-api-key"
-        }
-
-        val dataSource = DirectGeoapifySearchDataSource(fakeService, testConfig)
+        fakeService = FakeProxyLocationSearchService()
+        val dataSource = ProxyLocationSearchDataSource(fakeService)
         repo = LocationSearchRepositoryImpl(dataSource)
     }
 
@@ -88,27 +71,26 @@ class LocationSearchTest {
 
     @Test
     fun testBlankQueryRejectedLocally() = runBlocking {
-        // 1. blank query rejected locally (empty or spaces)
+        // 9. blank query -> no network request (tested empty and spaces)
         val result1 = repo.searchLocations("   ")
         assertEquals(LocationSearchResult.InvalidQuery, result1)
 
         val result2 = repo.searchLocations("")
         assertEquals(LocationSearchResult.InvalidQuery, result2)
+
+        assertEquals(0, fakeService.invocationCount)
     }
 
     @Test
     fun testWhitespaceTrimmed() = runBlocking {
-        // 2. whitespace trimmed
         fakeService.responseToReturn = Response.success(
-            GeoapifyResponse(
+            ProxySearchResponse(
                 listOf(
-                    GeoapifyResult(
-                        placeId = "1",
-                        formatted = "Harihar Fort, Maharashtra, India",
-                        addressLine1 = "Harihar Fort",
-                        addressLine2 = "Maharashtra, India",
-                        lat = 19.9046,
-                        lon = 73.4719,
+                    ProxyCandidate(
+                        label = "Harihar Fort",
+                        secondaryLabel = "Maharashtra, India",
+                        latitude = 19.9046,
+                        longitude = 73.4719,
                         category = "fort"
                     )
                 )
@@ -117,22 +99,21 @@ class LocationSearchTest {
 
         val result = repo.searchLocations("  Harihar Fort  ")
         assertTrue(result is LocationSearchResult.Success)
-        assertEquals("Harihar Fort", fakeService.lastText)
+        assertEquals("Harihar Fort", fakeService.lastQuery)
     }
 
     @Test
     fun testSuccessfulResponseMapsCandidates() = runBlocking {
-        // 3. successful response maps candidates
+        // 1. proxy 200 + candidates -> Success with correct order/fields
+        // 11. response requires no provider/place ID
         fakeService.responseToReturn = Response.success(
-            GeoapifyResponse(
+            ProxySearchResponse(
                 listOf(
-                    GeoapifyResult(
-                        placeId = "id-123",
-                        formatted = "Harihar Fort, Nashik",
-                        addressLine1 = "Harihar Fort",
-                        addressLine2 = "Nashik, India",
-                        lat = 19.9046,
-                        lon = 73.4719,
+                    ProxyCandidate(
+                        label = "Harihar Fort",
+                        secondaryLabel = "Nashik, India",
+                        latitude = 19.9046,
+                        longitude = 73.4719,
                         category = "natural.mountain"
                     )
                 )
@@ -144,7 +125,7 @@ class LocationSearchTest {
         val candidates = (result as LocationSearchResult.Success).candidates
         assertEquals(1, candidates.size)
         val candidate = candidates[0]
-        assertEquals("id-123", candidate.providerResultId)
+        assertNull(candidate.providerResultId) // Must be null as proxy response contains no place ID
         assertEquals("Harihar Fort", candidate.label)
         assertEquals("Nashik, India", candidate.secondaryLabel)
         assertEquals(19.9046, candidate.latitude, 0.0001)
@@ -154,64 +135,61 @@ class LocationSearchTest {
 
     @Test
     fun testMaximum5CandidatesExposed() = runBlocking {
-        // 4. maximum 5 candidates exposed
+        // 10. response >5 candidates -> never expose >5 if client defensive cap exists
         val sixResults = (1..6).map { i ->
-            GeoapifyResult(
-                placeId = "id-$i",
-                formatted = "Place $i",
-                addressLine1 = "Place $i",
-                addressLine2 = "Context $i",
-                lat = 19.0 + (i * 0.01),
-                lon = 73.0 + (i * 0.01),
+            ProxyCandidate(
+                label = "Place $i",
+                secondaryLabel = "Context $i",
+                latitude = 19.0 + (i * 0.01),
+                longitude = 73.0 + (i * 0.01),
                 category = "test"
             )
         }
-        fakeService.responseToReturn = Response.success(GeoapifyResponse(sixResults))
+        fakeService.responseToReturn = Response.success(ProxySearchResponse(sixResults))
 
         val result = repo.searchLocations("Test Limit")
         assertTrue(result is LocationSearchResult.Success)
         val candidates = (result as LocationSearchResult.Success).candidates
         assertEquals(5, candidates.size)
-        assertEquals("id-1", candidates[0].providerResultId)
-        assertEquals("id-5", candidates[4].providerResultId)
+        assertEquals("Place 1", candidates[0].label)
+        assertEquals("Place 5", candidates[4].label)
     }
 
     @Test
     fun testProviderRankingOrderPreserved() = runBlocking {
-        // 5. provider ranking order preserved
+        // 1. proxy 200 + candidates -> Success with correct order/fields
         val resultsInOrder = listOf(
-            GeoapifyResult("p3", "Three", "Three", "C3", 19.0, 73.0, "test"),
-            GeoapifyResult("p1", "One", "One", "C1", 19.1, 73.1, "test"),
-            GeoapifyResult("p2", "Two", "Two", "C2", 19.2, 73.2, "test")
+            ProxyCandidate("Three", "C3", 19.0, 73.0, "test"),
+            ProxyCandidate("One", "C1", 19.1, 73.1, "test"),
+            ProxyCandidate("Two", "C2", 19.2, 73.2, "test")
         )
-        fakeService.responseToReturn = Response.success(GeoapifyResponse(resultsInOrder))
+        fakeService.responseToReturn = Response.success(ProxySearchResponse(resultsInOrder))
 
         val result = repo.searchLocations("Rank test")
         assertTrue(result is LocationSearchResult.Success)
         val candidates = (result as LocationSearchResult.Success).candidates
         assertEquals(3, candidates.size)
-        assertEquals("p3", candidates[0].providerResultId)
-        assertEquals("p1", candidates[1].providerResultId)
-        assertEquals("p2", candidates[2].providerResultId)
+        assertEquals("Three", candidates[0].label)
+        assertEquals("One", candidates[1].label)
+        assertEquals("Two", candidates[2].label)
     }
 
     @Test
     fun testEmptyResponseNoResults() = runBlocking {
-        // 6. empty response -> NoResults
-        fakeService.responseToReturn = Response.success(GeoapifyResponse(emptyList()))
+        // 2. proxy 200 + empty candidates -> NoResults
+        fakeService.responseToReturn = Response.success(ProxySearchResponse(emptyList()))
         val result = repo.searchLocations("No exist")
         assertEquals(LocationSearchResult.NoResults, result)
     }
 
     @Test
     fun testMalformedCandidateSkipped() = runBlocking {
-        // 7. malformed candidate skipped (e.g., missing label entirely)
         fakeService.responseToReturn = Response.success(
-            GeoapifyResponse(
+            ProxySearchResponse(
                 listOf(
-                    GeoapifyResult("1", "Valid", "Valid", "C", 19.0, 73.0, null),
-                    GeoapifyResult("2", null, null, null, 19.1, 73.1, null), // malformed: no label fallback
-                    GeoapifyResult("3", "Valid 2", "Valid 2", "C", 19.2, 73.2, null)
+                    ProxyCandidate("Valid", "C", 19.0, 73.0, null),
+                    ProxyCandidate(null, null, 19.1, 73.1, null), // malformed: no label
+                    ProxyCandidate("Valid 2", "C", 19.2, 73.2, null)
                 )
             )
         )
@@ -220,20 +198,19 @@ class LocationSearchTest {
         assertTrue(result is LocationSearchResult.Success)
         val candidates = (result as LocationSearchResult.Success).candidates
         assertEquals(2, candidates.size)
-        assertEquals("1", candidates[0].providerResultId)
-        assertEquals("3", candidates[1].providerResultId)
+        assertEquals("Valid", candidates[0].label)
+        assertEquals("Valid 2", candidates[1].label)
     }
 
     @Test
     fun testInvalidCoordinateCandidateRejected() = runBlocking {
-        // 8. NaN/infinite/out-of-range coordinate candidate rejected
         fakeService.responseToReturn = Response.success(
-            GeoapifyResponse(
+            ProxySearchResponse(
                 listOf(
-                    GeoapifyResult("1", "NaN Lat", "NaN Lat", "C", Double.NaN, 73.0, null),
-                    GeoapifyResult("2", "Inf Lon", "Inf Lon", "C", 19.0, Double.POSITIVE_INFINITY, null),
-                    GeoapifyResult("3", "Out Range", "Out Range", "C", 95.0, 73.0, null),
-                    GeoapifyResult("4", "Valid", "Valid", "C", 19.0, 73.0, null)
+                    ProxyCandidate("NaN Lat", "C", Double.NaN, 73.0, null),
+                    ProxyCandidate("Inf Lon", "C", 19.0, Double.POSITIVE_INFINITY, null),
+                    ProxyCandidate("Out Range", "C", 95.0, 73.0, null),
+                    ProxyCandidate("Valid", "C", 19.0, 73.0, null)
                 )
             )
         )
@@ -242,16 +219,15 @@ class LocationSearchTest {
         assertTrue(result is LocationSearchResult.Success)
         val candidates = (result as LocationSearchResult.Success).candidates
         assertEquals(1, candidates.size)
-        assertEquals("4", candidates[0].providerResultId)
+        assertEquals("Valid", candidates[0].label)
     }
 
     @Test
     fun testOptionalCategoryMissingDoesNotCrash() = runBlocking {
-        // 9. optional category missing does not crash
         fakeService.responseToReturn = Response.success(
-            GeoapifyResponse(
+            ProxySearchResponse(
                 listOf(
-                    GeoapifyResult("1", "No Category", "No Category", "C", 19.0, 73.0, null)
+                    ProxyCandidate("No Category", "C", 19.0, 73.0, null)
                 )
             )
         )
@@ -264,8 +240,20 @@ class LocationSearchTest {
     }
 
     @Test
+    fun testInvalidQuery400() = runBlocking {
+        // 3. 400 -> InvalidQuery
+        fakeService.responseToReturn = Response.error(
+            400,
+            "Invalid Query".toResponseBody("application/json".toMediaTypeOrNull())
+        )
+
+        val result = repo.searchLocations("Invalid")
+        assertEquals(LocationSearchResult.InvalidQuery, result)
+    }
+
+    @Test
     fun testRateLimited429() = runBlocking {
-        // 10. 429 -> RateLimited
+        // 4. 429 -> RateLimited
         fakeService.responseToReturn = Response.error(
             429,
             "Rate limit exceeded".toResponseBody("application/json".toMediaTypeOrNull())
@@ -276,20 +264,44 @@ class LocationSearchTest {
     }
 
     @Test
-    fun testProviderUnavailable5xx() = runBlocking {
-        // 11. 5xx -> ProviderUnavailable
+    fun testProviderUnavailable502() = runBlocking {
+        // 5. 502 -> ProviderUnavailable
+        fakeService.responseToReturn = Response.error(
+            502,
+            "Bad Gateway".toResponseBody("application/json".toMediaTypeOrNull())
+        )
+
+        val result = repo.searchLocations("Server Error 502")
+        assertEquals(LocationSearchResult.ProviderUnavailable, result)
+    }
+
+    @Test
+    fun testProviderUnavailable503() = runBlocking {
+        // 5. 503 -> ProviderUnavailable
         fakeService.responseToReturn = Response.error(
             503,
             "Service Unavailable".toResponseBody("application/json".toMediaTypeOrNull())
         )
 
-        val result = repo.searchLocations("Server Error")
+        val result = repo.searchLocations("Server Error 503")
         assertEquals(LocationSearchResult.ProviderUnavailable, result)
     }
 
     @Test
-    fun testTimeoutException() = runBlocking {
-        // 12. timeout -> Timeout
+    fun testTimeout504() = runBlocking {
+        // 6. 504 -> Timeout
+        fakeService.responseToReturn = Response.error(
+            504,
+            "Gateway Timeout".toResponseBody("application/json".toMediaTypeOrNull())
+        )
+
+        val result = repo.searchLocations("Timeout 504")
+        assertEquals(LocationSearchResult.Timeout, result)
+    }
+
+    @Test
+    fun testSocketTimeoutException() = runBlocking {
+        // 8. SocketTimeout -> Timeout
         fakeService.exceptionToThrow = SocketTimeoutException("Read timed out")
 
         val result = repo.searchLocations("Timeout")
@@ -297,54 +309,8 @@ class LocationSearchTest {
     }
 
     @Test
-    fun testBlankApiKeyZeroCalls() = runBlocking {
-        val blankConfig = object : GeoapifyConfig {
-            override val apiKey: String = ""
-        }
-        val blankDataSource = DirectGeoapifySearchDataSource(fakeService, blankConfig)
-        val blankRepo = LocationSearchRepositoryImpl(blankDataSource)
-
-        fakeService.invocationCount = 0
-        val result = blankRepo.searchLocations("Test Query")
-
-        assertEquals(LocationSearchResult.ProviderUnavailable, result)
-        assertEquals(0, fakeService.invocationCount)
-    }
-
-    @Test
-    fun testWhitespaceApiKeyZeroCalls() = runBlocking {
-        val spaceConfig = object : GeoapifyConfig {
-            override val apiKey: String = "   "
-        }
-        val spaceDataSource = DirectGeoapifySearchDataSource(fakeService, spaceConfig)
-        val spaceRepo = LocationSearchRepositoryImpl(spaceDataSource)
-
-        fakeService.invocationCount = 0
-        val result = spaceRepo.searchLocations("Test Query")
-
-        assertEquals(LocationSearchResult.ProviderUnavailable, result)
-        assertEquals(0, fakeService.invocationCount)
-    }
-
-    @Test
-    fun testValidApiKeyAllowsInvocation() = runBlocking {
-        fakeService.invocationCount = 0
-        fakeService.responseToReturn = Response.success(
-            GeoapifyResponse(
-                listOf(
-                    GeoapifyResult("1", "Valid", "Valid", "C", 19.0, 73.0, null)
-                )
-            )
-        )
-
-        val result = repo.searchLocations("Test Query")
-        assertTrue(result is LocationSearchResult.Success)
-        assertEquals(1, fakeService.invocationCount)
-        assertEquals("test-api-key", fakeService.lastApiKey)
-    }
-
-    @Test
     fun testUnknownHostExceptionMapsToNoNetwork() = runBlocking {
+        // 7. UnknownHost/Connect/NoRouteToHost -> NoNetwork
         fakeService.exceptionToThrow = java.net.UnknownHostException("Unable to resolve host")
 
         val result = repo.searchLocations("Query")
@@ -353,7 +319,17 @@ class LocationSearchTest {
 
     @Test
     fun testConnectExceptionMapsToNoNetwork() = runBlocking {
+        // 7. UnknownHost/Connect/NoRouteToHost -> NoNetwork
         fakeService.exceptionToThrow = java.net.ConnectException("Connection refused")
+
+        val result = repo.searchLocations("Query")
+        assertEquals(LocationSearchResult.NoNetwork, result)
+    }
+
+    @Test
+    fun testNoRouteToHostExceptionMapsToNoNetwork() = runBlocking {
+        // 7. UnknownHost/Connect/NoRouteToHost -> NoNetwork
+        fakeService.exceptionToThrow = java.net.NoRouteToHostException("No route to host")
 
         val result = repo.searchLocations("Query")
         assertEquals(LocationSearchResult.NoNetwork, result)
@@ -369,7 +345,6 @@ class LocationSearchTest {
 
     @Test
     fun testMalformedJsonException() = runBlocking {
-        // 14. malformed JSON handled safely (throws unexpected exception)
         fakeService.exceptionToThrow = IllegalArgumentException("Malformed JSON adapter crash")
 
         val result = repo.searchLocations("Malformed")
@@ -379,12 +354,6 @@ class LocationSearchTest {
 
     @Test
     fun testResultOneIsNeverAutomaticallyPersisted() = runBlocking {
-        // 15. result #1 is never automatically persisted/selected (DB remains clean)
-        // 16. candidate search does not modify JourneyLocation Room data
-        // 17. candidate search does not modify Trip
-        // 18. candidate search does not modify TravelStamp
-        
-        // Seed some data first to prove DB exists but stays unmodified
         val tripId = db.tripDao().insertTrip(
             TripEntity(name = "Historical", destination = "Pune", date = "Jan 2026", status = "IN_PROGRESS")
         )
@@ -408,10 +377,10 @@ class LocationSearchTest {
         )
 
         fakeService.responseToReturn = Response.success(
-            GeoapifyResponse(
+            ProxySearchResponse(
                 listOf(
-                    GeoapifyResult("p1", "Fort A", "Fort A", "C", 19.0, 73.0, "fort"),
-                    GeoapifyResult("p2", "Fort B", "Fort B", "C", 19.1, 73.1, "fort")
+                    ProxyCandidate("Fort A", "Fort A", 19.0, 73.0, "fort"),
+                    ProxyCandidate("Fort B", "Fort B", 19.1, 73.1, "fort")
                 )
             )
         )
@@ -419,7 +388,6 @@ class LocationSearchTest {
         val searchResult = repo.searchLocations("Forts")
         assertTrue(searchResult is LocationSearchResult.Success)
 
-        // Count items in tables
         val locations = db.journeyLocationDao().getLocationsForTripSync(tripId)
         assertTrue(locations.isEmpty())
 
@@ -428,21 +396,5 @@ class LocationSearchTest {
 
         val stamps = db.travelStampDao().getStampForTripSync(tripId)
         assertNotNull(stamps)
-    }
-
-    @Test
-    fun testIndiaCountryFilterAndLimitParams() = runBlocking {
-        // 19. India country filter is included
-        // 20. result limit is 5
-        // 21. no GPS/current-location data is included in request
-        fakeService.responseToReturn = Response.success(
-            GeoapifyResponse(
-                listOf(GeoapifyResult("1", "V", "V", "C", 19.0, 73.0, null))
-            )
-        )
-
-        repo.searchLocations("India check")
-        assertEquals("countrycode:in", fakeService.lastFilter)
-        assertEquals(5, fakeService.lastLimit)
     }
 }

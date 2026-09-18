@@ -5,9 +5,6 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.example.data.datasource.GeoapifyConfig
-import com.example.data.datasource.GeoapifyResponse
-import com.example.data.datasource.GeoapifyResult
 import com.example.data.local.TravelStampDatabase
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.model.JourneyLocation

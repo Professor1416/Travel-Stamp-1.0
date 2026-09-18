@@ -22,9 +22,8 @@ import com.example.data.repository.TravelStampRepository
 import com.example.data.repository.TravelStampRepositoryImpl
 import com.example.data.repository.TripRepository
 import com.example.data.repository.TripRepositoryImpl
-import com.example.data.datasource.GeoapifyConfig
-import com.example.data.datasource.GeoapifyService
-import com.example.data.datasource.DirectGeoapifySearchDataSource
+import com.example.data.datasource.ProxyLocationSearchDataSource
+import com.example.data.datasource.ProxyLocationSearchService
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -87,21 +86,17 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val locationSearchRepository: LocationSearchRepository by lazy {
-        // TODO: In production, replace DirectGeoapifySearchDataSource with the approved secure proxy/config path.
-        val config = object : GeoapifyConfig {
-            override val apiKey: String = ""
-        }
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .build()
         val retrofit = Retrofit.Builder()
-            .baseUrl("https://api.geoapify.com/")
+            .baseUrl("https://travel-stamp-api.prashantdasnur11.workers.dev/")
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create())
             .build()
-        val geoapifyService = retrofit.create(GeoapifyService::class.java)
-        val dataSource = DirectGeoapifySearchDataSource(geoapifyService, config)
+        val searchService = retrofit.create(ProxyLocationSearchService::class.java)
+        val dataSource = ProxyLocationSearchDataSource(searchService)
         LocationSearchRepositoryImpl(dataSource)
     }
 
