@@ -256,14 +256,14 @@ class TravelViewModel(
     val allTrips: StateFlow<List<Trip>> = tripRepository.getAllTrips()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
     val activeTrips: StateFlow<List<Trip>> = tripRepository.getActiveTrips()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
@@ -272,7 +272,7 @@ class TravelViewModel(
     val completedTrips: StateFlow<List<Trip>> = tripRepository.getCompletedTrips()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
@@ -281,21 +281,21 @@ class TravelViewModel(
     val stamps: StateFlow<List<TravelStamp>> = travelStampRepository.getAllStamps()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
     val totalMomentsCount: StateFlow<Int> = momentRepository.getTotalMomentsCount()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = 0
         )
 
     val completedTripsCount: StateFlow<Int> = tripRepository.getCompletedTripsCount()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = 0
         )
 
@@ -309,7 +309,7 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
         )
 
@@ -319,7 +319,7 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
@@ -329,7 +329,7 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
@@ -339,7 +339,7 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
@@ -349,7 +349,7 @@ class TravelViewModel(
         }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
         )
 
