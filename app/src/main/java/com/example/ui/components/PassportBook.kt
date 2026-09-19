@@ -61,13 +61,16 @@ const val PASSPORT_PAGE_SIZE = 4
 
 /**
  * Transforms sorted travel stamps into pages of size [PASSPORT_PAGE_SIZE].
- * Pure, side-effect free, sorting ascending by stampNumber.
+ * Pure, side-effect free, sorting descending by stampNumber.
  */
 fun buildPassportPages(
     stamps: List<TravelStamp>
 ): List<List<TravelStamp>> {
     return stamps
-        .sortedBy { it.stampNumber }
+        .sortedWith(
+            compareByDescending<TravelStamp> { it.stampNumber }
+                .thenByDescending { it.id }
+        )
         .chunked(PASSPORT_PAGE_SIZE)
 }
 
@@ -80,7 +83,12 @@ fun PassportBook(
     onCreateJourney: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val sortedStamps = remember(stamps) { stamps.sortedBy { it.stampNumber } }
+    val sortedStamps = remember(stamps) {
+        stamps.sortedWith(
+            compareByDescending<TravelStamp> { it.stampNumber }
+                .thenByDescending { it.id }
+        )
+    }
     val pages = remember(sortedStamps) { buildPassportPages(sortedStamps) }
 
     if (pages.isEmpty()) {
