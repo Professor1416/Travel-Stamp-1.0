@@ -63,6 +63,9 @@ object BackupManager {
         root.put("exportedAt", System.currentTimeMillis())
         root.put("exportDateFormatted", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
 
+        // Ensure Trip.stampEarned state is fully reconciled before export
+        database.travelStampDao().reconcileStampIntegrity()
+
         // 1. Trips
         val trips = database.tripDao().getAllTripsListSync()
         val tripsArray = JSONArray()
@@ -470,7 +473,7 @@ object BackupManager {
                 peopleCount = obj.optInt("peopleCount", 1),
                 description = obj.optString("description", ""),
                 status = if (isCompleted) "COMPLETED" else if (isFuture) "UPCOMING" else "IN_PROGRESS",
-                stampEarned = isCompleted && obj.optBoolean("stampEarned", true),
+                stampEarned = isCompleted && obj.optBoolean("stampEarned", false),
                 reminderEnabled = obj.optBoolean("reminderEnabled", false),
                 reminderPreset = obj.optString("reminderPreset", "ONE_DAY_BEFORE"),
                 reminderTimeMinutes = if (obj.has("reminderTimeMinutes") && !obj.isNull("reminderTimeMinutes")) {
@@ -691,6 +694,9 @@ object BackupManager {
         if (finalMax > 0L) {
             database.travelStampDao().setLastAllocatedSequence(StampSequenceEntity(id = "STAMP_COUNTER", lastAllocatedNumber = finalMax))
         }
+
+        // Reconcile trip stampEarned state with actual imported active travel_stamps
+        database.travelStampDao().reconcileStampIntegrity()
 
         Result.success(
             BackupImportResult(

@@ -209,6 +209,10 @@ abstract class TravelStampDatabase : RoomDatabase() {
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_journey_locations_tripId` ON `journey_locations` (`tripId`)")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_journey_locations_uuid` ON `journey_locations` (`uuid`)")
+
+            // 7. Reconcile trip stampEarned state with actual active travel_stamps
+            db.execSQL("UPDATE `trips` SET `stampEarned` = 0 WHERE `id` NOT IN (SELECT `tripId` FROM `travel_stamps` WHERE `deletedAt` IS NULL)")
+            db.execSQL("UPDATE `trips` SET `stampEarned` = 1 WHERE `id` IN (SELECT `tripId` FROM `travel_stamps` WHERE `deletedAt` IS NULL)")
         }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -423,6 +427,8 @@ abstract class TravelStampDatabase : RoomDatabase() {
                             super.onOpen(db)
                             db.setForeignKeyConstraintsEnabled(true)
                             db.execSQL("PRAGMA foreign_keys = ON;")
+                            db.execSQL("UPDATE `trips` SET `stampEarned` = 0 WHERE `id` NOT IN (SELECT `tripId` FROM `travel_stamps` WHERE `deletedAt` IS NULL)")
+                            db.execSQL("UPDATE `trips` SET `stampEarned` = 1 WHERE `id` IN (SELECT `tripId` FROM `travel_stamps` WHERE `deletedAt` IS NULL)")
                         }
                     })
                     .build()

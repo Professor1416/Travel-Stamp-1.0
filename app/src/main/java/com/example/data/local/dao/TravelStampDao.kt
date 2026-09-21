@@ -43,8 +43,35 @@ interface TravelStampDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertStamp(stamp: TravelStampEntity): Long
 
+    @Query("SELECT * FROM travel_stamps WHERE id = :id LIMIT 1")
+    suspend fun getStampByIdSync(id: Long): TravelStampEntity?
+
     @Query("DELETE FROM travel_stamps WHERE id = :id")
-    suspend fun deleteStampById(id: Long)
+    suspend fun deleteStampByIdInternal(id: Long): Int
+
+    @Query("UPDATE trips SET stampEarned = 0 WHERE id = :tripId")
+    suspend fun clearTripStampEarned(tripId: Long): Int
+
+    @Transaction
+    suspend fun deleteStampById(id: Long) {
+        val stamp = getStampByIdSync(id)
+        deleteStampByIdInternal(id)
+        if (stamp != null) {
+            clearTripStampEarned(stamp.tripId)
+        }
+    }
+
+    @Query("UPDATE trips SET stampEarned = 0 WHERE id NOT IN (SELECT tripId FROM travel_stamps WHERE deletedAt IS NULL)")
+    suspend fun clearOrphanStampEarnedFlags(): Int
+
+    @Query("UPDATE trips SET stampEarned = 1 WHERE id IN (SELECT tripId FROM travel_stamps WHERE deletedAt IS NULL)")
+    suspend fun syncActiveStampEarnedFlags(): Int
+
+    @Transaction
+    suspend fun reconcileStampIntegrity() {
+        clearOrphanStampEarnedFlags()
+        syncActiveStampEarnedFlags()
+    }
 
     @Query("SELECT COUNT(*) FROM travel_stamps")
     fun getStampsCount(): Flow<Int>
@@ -66,6 +93,9 @@ interface TravelStampDao {
 
     @Query("UPDATE trips SET status = 'COMPLETED', stampEarned = 1, completedAt = :completedAt, updatedAt = :completedAt WHERE id = :tripId")
     suspend fun markTripCompleted(tripId: Long, completedAt: Long): Int
+
+    @Query("UPDATE trips SET stampEarned = :stampEarned WHERE id = :tripId")
+    suspend fun updateTripStampEarned(tripId: Long, stampEarned: Boolean): Int
 
     @Query("UPDATE trips SET date = :newDate, updatedAt = :updatedAt WHERE id = :tripId")
     suspend fun updateTripDateInternal(tripId: Long, newDate: String, updatedAt: Long): Int

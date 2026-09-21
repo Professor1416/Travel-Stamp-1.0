@@ -51,6 +51,7 @@ interface TravelStampRepository {
     suspend fun deleteStamp(id: Long)
     suspend fun updateStampMomentsCount(tripId: Long)
     suspend fun correctOfficialJourneyDate(tripId: Long, newDate: String): Result<Boolean>
+    suspend fun reconcileStampIntegrity()
     fun getStampsCount(): Flow<Int>
     suspend fun getStampsCountSync(): Int
     suspend fun allocateNextStampNumber(): Long
@@ -182,6 +183,10 @@ class TravelStampRepositoryImpl(
                 true
             }
         }
+    }
+
+    override suspend fun reconcileStampIntegrity() = withContext(Dispatchers.IO) {
+        stampDao.reconcileStampIntegrity()
     }
 
     override fun getStampsCount(): Flow<Int> =

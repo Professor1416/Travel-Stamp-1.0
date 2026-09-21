@@ -42,7 +42,7 @@ data class TripEntity(
             status == "ACTIVE" || status == "IN_PROGRESS" -> TripStatus.IN_PROGRESS
             else -> TripStatus.IN_PROGRESS
         }
-        val resolvedStampEarned = resolvedStatus == TripStatus.COMPLETED && (stampEarned || completedAt != null)
+        val resolvedStampEarned = resolvedStatus == TripStatus.COMPLETED && stampEarned
 
         val validStartTime = startTimeMinutes?.takeIf { it in 0..1439 }
         val validReminderTime = reminderTimeMinutes?.takeIf { it in 0..1439 }

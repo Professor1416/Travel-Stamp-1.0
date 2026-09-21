@@ -87,6 +87,12 @@ class TravelViewModel(
     locationSearchRepositoryParam: LocationSearchRepository? = null
 ) : ViewModel() {
 
+    init {
+        viewModelScope.launch {
+            travelStampRepository.reconcileStampIntegrity()
+        }
+    }
+
     private val journeyLocationRepository: JourneyLocationRepository =
         journeyLocationRepositoryParam ?: JourneyLocationRepositoryImpl(database.journeyLocationDao())
 

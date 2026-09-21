@@ -121,7 +121,6 @@ class TripRepositoryImpl(
 
         val updated = existing.copy(
             status = TripStatus.COMPLETED.name,
-            stampEarned = true,
             completedAt = System.currentTimeMillis()
         )
         tripDao.updateTrip(updated)
