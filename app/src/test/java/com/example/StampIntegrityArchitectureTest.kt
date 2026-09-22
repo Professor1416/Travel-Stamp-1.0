@@ -49,7 +49,7 @@ class StampIntegrityArchitectureTest {
             .build()
         tripRepo = TripRepositoryImpl(db.tripDao(), db.momentDao())
         stampRepo = TravelStampRepositoryImpl(db.travelStampDao())
-        momentRepo = MomentRepositoryImpl(db.momentDao(), db.travelStampDao())
+        momentRepo = MomentRepositoryImpl(db.momentDao(), context)
         checklistRepo = ChecklistRepositoryImpl(db.checklistDao())
     }
 
@@ -160,7 +160,9 @@ class StampIntegrityArchitectureTest {
                 stampCode = "#001",
                 title = "Tringalwadi Fort",
                 destination = "Igatpuri, Maharashtra",
-                dateText = "22 Aug 2026"
+                dateText = "22 Aug 2026",
+                peopleCount = 1,
+                momentsCount = 0
             )
         )
 
@@ -261,7 +263,7 @@ class StampIntegrityArchitectureTest {
         assertEquals(4, result.importedTrips)
         assertEquals(2, result.importedStamps)
 
-        val allTrips = tripRepo.getAllTripsListSync()
+        val allTrips = tripRepo.getAllTrips().first()
         assertEquals(4, allTrips.size)
 
         val allStamps = stampRepo.getAllStamps().first()
@@ -438,14 +440,16 @@ class StampIntegrityArchitectureTest {
                     stampCode = String.format("#%03d", num),
                     title = "Trip ${index + 1}",
                     destination = "Dest ${index + 1}",
-                    dateText = "10 Jan 2024"
+                    dateText = "10 Jan 2024",
+                    peopleCount = 1,
+                    momentsCount = 0
                 )
             )
         }
 
         stampRepo.reconcileStampIntegrity()
 
-        val allStamps = stampRepo.getAllStampsListSync()
+        val allStamps = db.travelStampDao().getAllStampsListSync()
         assertEquals(6, allStamps.size)
         assertEquals(listOf(1L, 2L, 3L, 4L, 25L, 26L), allStamps.map { it.stampNumber })
         assertEquals(listOf("#001", "#002", "#003", "#004", "#025", "#026"), allStamps.map { it.stampCode })
@@ -512,7 +516,9 @@ class StampIntegrityArchitectureTest {
             stampCode = "#001",
             title = "Tringalwadi Fort",
             destination = "Igatpuri",
-            dateText = "22 Aug 2026"
+            dateText = "22 Aug 2026",
+            peopleCount = 1,
+            momentsCount = 0
         )
         db.travelStampDao().insertStamp(stampEntity)
 
@@ -552,6 +558,8 @@ class StampIntegrityArchitectureTest {
             title = "Umbhrande Waterfall",
             destination = "Igatpuri",
             dateText = "25 Aug 2026",
+            peopleCount = 1,
+            momentsCount = 0,
             inkColorHex = "#2E5D4B",
             stampStyle = "WATERFALL",
             reflectionNote = "Lush green valley"
@@ -632,15 +640,16 @@ class StampIntegrityArchitectureTest {
                     stampCode = String.format("#%03d", stampNums[idx]),
                     title = "Trip $tId",
                     destination = "Dest $tId",
-                    dateText = "10 Jan 2024"
+                    dateText = "10 Jan 2024",
+                    peopleCount = 1,
+                    momentsCount = 0
                 )
             )
         }
 
         // Export to JSON
-        val exportResult = BackupManager.createExportJson(db)
-        assertTrue(exportResult.isSuccess)
-        val json = exportResult.getOrThrow()
+        val json = BackupManager.generateBackupJson(db)
+        assertTrue(json.isNotBlank())
 
         // Create a new fresh in-memory database to restore into
         val freshDb = Room.inMemoryDatabaseBuilder(context, TravelStampDatabase::class.java)

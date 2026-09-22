@@ -1,54 +1,141 @@
 # Travel Stamp 1.0 — Privacy, Data-Flow & Systems Audit Inventory
 **Document ID:** `TS-COMP-02-DATA-FLOW-V1`  
-**Version:** 1.0.0  
+**Revision:** 2.0.0 (TS-COMP-02B Verification & Correction Pass)  
 **Audit Scope:** Full repository source code audit (`Professor1416/Travel-Stamp-1.0`)  
 **Audit Mode:** Strict Non-Invasive Audit (Codebase analysis only; zero production modifications)  
 **Target File:** `docs/compliance/TRAVEL_STAMP_DATA_FLOW_V1.md`  
+**Audit Timestamp:** 2026-09-21T02:45:00-07:00 (Local Time: `2026-09-21T02:45:00-07:00`, UTC: `2026-09-21T09:45:00Z`)  
+**Environment/Repository State:** Workspace directory `/app/applet` (git repository metadata `.git` not present in build environment container; exact source tree state verified directly).
 
 ---
 
-## Section A: Executive Summary & Data Governance Stance
+## Audit Confidence and Evidence Rules
 
-Travel Stamp is architected as an **offline-first, local-custody personal travel log and passport application**. The primary data architecture stores user journeys, personal notes, moments, checklists, and earned travel stamps locally inside the Android sandboxed application environment using an encrypted-ready SQLite (Room) relational database and private internal storage.
+This document adheres to strict factual verification rules:
+1. **Source Code is Primary Truth:** Only statements directly verified by physical examination of the source code files, build configurations, and generated manifests are stated as facts.
+2. **Runtime / Server / Provider Behavior Not Observable is Marked Unknown:** Behavior of external servers (such as the Cloudflare Worker proxy or upstream place search data providers) cannot be proven by inspecting this Android repository and is strictly marked as `EXTERNAL VERIFICATION REQUIRED`.
+3. **Dependency Presence is Not Runtime Processing:** The existence of a dependency in `libs.versions.toml` or `app/build.gradle.kts` does not constitute active user data collection or processing. Exact dependency states are distinguished between:
+   - `NOT PRESENT`: Not declared anywhere.
+   - `VERSION-CATALOG ONLY`: Present in `gradle/libs.versions.toml`, but not referenced in `app/build.gradle.kts`.
+   - `COMMENTED OUT`: Present in `app/build.gradle.kts` but commented out.
+   - `BUNDLED DEPENDENCY`: Present as an active Gradle `implementation` dependency.
+   - `IMPORTED IN SOURCE`: Has active `import` statements in Kotlin source files.
+   - `INITIALIZED AT RUNTIME`: Initialized in `Application.onCreate()`, `Activity`, or WorkManager.
+   - `ACTIVELY USED FOR USER DATA`: Transmits or processes user PII / journey data.
+4. **Commented Sample Configuration is Not Active Configuration:** Sample XML comments in resource files (such as `res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml`) are not treated as active exclusions or inclusions.
+
+---
+
+## Section A: Audit Findings & Compliance Action Matrix
+
+| ID | Finding | Evidence | Severity | Required Action |
+|---|---|---|---|---|
+| **COMP-F01** | **Android Backup Configuration Unconstrained** | `AndroidManifest.xml:12` declares `android:allowBackup="true"`. Both `res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml` contain only commented-out templates. No explicit `<include>` or `<exclude>` rules exist. SharedPreferences (`travel_stamp_prefs.xml`), Room DB, and photos default to system backup eligibility. | **P1 (High)** | Author explicit XML rules in `data_extraction_rules.xml` and `backup_rules.xml` to define explicit inclusions/exclusions (e.g. exclude preferences or unencrypted tokens) prior to production release. |
+| **COMP-F02** | **Bundled Unused Firebase / Google Play Dependencies** | `app/build.gradle.kts:80,105,115` actively bundles `platform(libs.firebase.bom)`, `libs.firebase.ai`, and `libs.firebase.appcheck.recaptcha`. However, zero Firebase classes are imported or initialized in `app/src/main/`. | **P1 (High)** | Remove or comment out unused `firebase.ai` and `firebase.appcheck.recaptcha` in `app/build.gradle.kts` to reduce APK footprint, eliminate attack surface, and prevent unintended manifest merges. |
+| **COMP-F03** | **INTERNET Permission Missing Direct Manifest Declaration** | `app/src/main/AndroidManifest.xml` does **not** declare `<uses-permission android:name="android.permission.INTERNET" />`. The app acquires `INTERNET` solely via merged AAR manifests (`com.google.firebase:firebase-ai:17.13.0` and `com.google.android.recaptcha:recaptcha:18.7.1`). If unused Firebase dependencies are removed, network egress will fail at runtime. | **P0 (Critical)** | Explicitly declare `<uses-permission android:name="android.permission.INTERNET" />` in `app/src/main/AndroidManifest.xml` so network place search does not rely on transient dependency inheritance. |
+| **COMP-F04** | **Crashlytics and Crash Reporting Absent** | Neither Firebase Crashlytics nor third-party crash reporting SDKs (Sentry, Bugsnag) are present in `gradle/libs.versions.toml`, `build.gradle.kts`, or application source code. | **P2 (Medium)** | Evaluate whether crash reporting is required for production operations. If required, implement privacy-preserving crash reporting; if omitted, note intentional privacy-first stance in operations documentation. |
+| **COMP-F05** | **R8 Code Shrinking / Obfuscation Disabled in Release** | In `app/build.gradle.kts:45`, `buildTypes.release` has `isMinifyEnabled = false`. | **P1 (High)** | Enable `isMinifyEnabled = true` and configure ProGuard rules in `proguard-rules.pro` before building Google Play production release AAB. |
+| **COMP-F06** | **Location-Search External Retention & Processing Unknown** | `ProxyLocationSearchDataSource.kt` transmits queries to `https://travel-stamp-api.prashantdasnur11.workers.dev/v1/places/search?q={query}`. Server-side logging, proxy IP retention, and upstream provider processing cannot be verified from client code. | **P1 (High)** | Perform external compliance verification on the Cloudflare Worker script and document worker retention policies and third-party upstream providers (e.g. OpenStreetMap / Nominatim / Mapbox). |
+| **COMP-F07** | **SOI (Survey of India) Production Geometry Not Yet Integrated** | Geographic visualization in `InkMapSpatialEngine.kt` uses an abstract 2D coordinate normalization and clustering engine. Official Survey of India border polygon compliance has not been integrated into the repository. | **P2 (Medium)** | Before deploying public map features covering Indian territory, ensure boundary representation complies with National Geospatial Policy and Survey of India guidelines. |
+
+---
+
+## Section B: Executive Summary & Data Governance Stance
+
+Travel Stamp is architected as an **offline-first, local-custody personal travel log and passport application**. The primary data architecture stores user journeys, personal notes, moments, checklists, and earned travel stamps locally inside the Android sandboxed application environment using SQLite (Room) relational database and private internal storage.
 
 ### Core Architectural Findings:
-1. **Local-Custody Storage Model:** All core user records (trips, moments, reflection notes, hyperlinks, checklists, travel stamps) reside exclusively on the user's physical device inside `/data/user/0/com.aistudio.../databases/travel_stamp_database` and private internal storage `/data/user/0/com.aistudio.../files/moments/`.
-2. **Minimalist Network Egress:** There is only **one (1)** active HTTP network integration in the entire production runtime: an anonymous place search query sent to a Cloudflare Worker proxy (`https://travel-stamp-api.prashantdasnur11.workers.dev/v1/places/search?q={query}`). No user identifiers, auth tokens, device IDs, or telemetry payloads are transmitted.
+1. **Local-Custody Storage Model:** All core user records (trips, moments, reflection notes, hyperlinks, checklists, travel stamps, journey locations) reside on the user's physical device inside `/data/user/0/com.aistudio.travelstamp.vjknpt/databases/travel_stamp_database` and private internal storage `/data/user/0/com.aistudio.travelstamp.vjknpt/files/moments/`.
+2. **Minimalist Network Egress:** There is only **one (1)** active HTTP network integration in the entire production runtime: an anonymous place search query sent to a Cloudflare Worker proxy (`https://travel-stamp-api.prashantdasnur11.workers.dev/v1/places/search?q={query}`). No user identifiers, auth tokens, device IDs, or telemetry payloads are transmitted by app code.
 3. **Absence of Tracker/Analytics SDKs:** The application does **NOT** initialize or bundle any advertising SDKs (AdMob, Meta Audience Network), tracking SDKs, commercial crash-reporting platforms (Firebase Crashlytics, Sentry, Bugsnag), or third-party analytics pipelines (Google Analytics, Mixpanel, Amplitude).
-4. **Declared vs. Active Dependency Discrepancy:** While Firebase packages (`firebase-ai`, `firebase-appcheck-playintegrity`, `firebase-auth`, `firebase-firestore-ktx`) are listed in the Gradle Version Catalog (`gradle/libs.versions.toml`), they are **completely omitted** from `app/build.gradle.kts` and have **zero (0) imports or invocations** anywhere in the Kotlin source code.
+4. **Firebase Dependency Status:** `firebase-bom`, `firebase-ai`, and `firebase-appcheck-recaptcha` are actively bundled as dependencies in `app/build.gradle.kts`, but have **zero imports, zero initialization, and zero active runtime calls** in application source code.
 5. **Active EXIF Privacy Stripping:** The media pipeline explicitly strips sensitive GPS metadata (`TAG_GPS_LATITUDE`, `TAG_GPS_LONGITUDE`, `TAG_GPS_ALTITUDE`, `TAG_GPS_TIMESTAMP`, etc.) from all photos before committing them to permanent journal storage (`PhotoUtils.kt:356-371`).
-6. **Hardened Local Backup Architecture:** The custom backup subsystem exports encrypted or portable archives (`.tsbackup` ZIP and legacy `.json`) directly to user-selected destinations with strict **Zip Slip vulnerability prevention** (`BackupManager.kt:349-354`).
+6. **Hardened Local Backup Architecture:** The custom backup subsystem exports portable archives (`.tsbackup` ZIP and legacy `.json`) directly to user-selected destinations with strict **Zip Slip vulnerability prevention** (`BackupManager.kt:349-354`).
 
 ---
 
-## Section B: Android Manifest & Device Capabilities Audit
+## Section C: Android Manifest & Permission Truth Matrix
 
-### 1. Declared System Permissions (`app/src/main/AndroidManifest.xml`)
+### 1. Direct App Manifest Declarations (`app/src/main/AndroidManifest.xml`)
 
-| Permission | Protection Level | Purpose in Travel Stamp | Egress / Scope |
-|---|---|---|---|
-| `android.permission.INTERNET` | Normal (Install-time) | Required for querying the Cloudflare Worker place search proxy (`/v1/places/search`). | External HTTPS network egress to `travel-stamp-api.prashantdasnur11.workers.dev`. |
-| `android.permission.CAMERA` | Dangerous (Runtime) | Enables in-app photo capture for travel moments using `ActivityResultContracts.TakePicture()`. | Local device camera hardware only; frames are written directly to private app cache. |
-| `android.permission.POST_NOTIFICATIONS` | Dangerous (Runtime, API 33+) | Delivers pre-trip preparation and packing notifications scheduled via WorkManager. | Local Android system notification shade; zero network delivery. |
-| `android.permission.RECEIVE_BOOT_COMPLETED` | Normal (Install-time) | Required by AndroidX WorkManager internals to reschedule pending reminder alarms across system reboots. | Device system broadcast receiver; zero user data exposure. |
-
-*Note on Hardware Location Permissions:* **Neither `ACCESS_FINE_LOCATION` nor `ACCESS_COARSE_LOCATION` is declared in `AndroidManifest.xml`.** The app does not access device GPS, Wi-Fi location, cell tower triangulation, or on-device location hardware.
-
----
-
-### 2. Exported Android Components
-
-| Component | Class | Exported | Intent Filters / Configuration | Privacy & Security Risk Assessment |
-|---|---|---|---|---|
-| `<activity>` | `com.example.MainActivity` | `true` | `android.intent.action.MAIN`<br>`android.intent.category.LAUNCHER` | **Safe.** Standard app launcher entry point. Supports `onNewIntent` for deep navigation when a user taps a local trip reminder notification (`EXTRA_TRIP_ID`). |
-| `<provider>` | `androidx.core.content.FileProvider` | `false` | `android:authorities="${applicationId}.fileprovider"`<br>`android:grantUriPermissions="true"` | **Safe.** Non-exported. Safely generates short-lived, permission-granted `content://` URIs for sharing exports and camera captures. |
-
----
-
-### 3. FileProvider Path Mapping (`app/src/main/res/xml/file_paths.xml`)
+Physical examination of `app/src/main/AndroidManifest.xml` confirms the following declarations:
 
 ```xml
-<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+...
+```
+
+| Permission | In Direct App Manifest? | Protection Level | Purpose in Travel Stamp Code |
+|---|---|---|---|
+| `android.permission.CAMERA` | **YES** | Dangerous (Runtime) | Enables in-app photo capture for travel moments using `ActivityResultContracts.TakePicture()`. |
+| `android.permission.POST_NOTIFICATIONS` | **YES** | Dangerous (Runtime, API 33+) | Delivers pre-trip preparation and packing notifications scheduled via WorkManager. |
+| `android.permission.RECEIVE_BOOT_COMPLETED` | **YES** | Normal (Install-time) | Required by AndroidX WorkManager internals (`SystemAlarmService`, `SystemJobService`) to reschedule pending reminder alarms across system reboots. No application-owned broadcast receiver exists for this action. |
+| `android.permission.INTERNET` | **NO (NOT DIRECTLY DECLARED)** | Normal (Install-time) | Inherited exclusively from merged library manifests. |
+
+---
+
+### 2. Merged Manifest Manifestation (Debug vs. Release)
+
+Verification executed via `gradle :app:processDebugMainManifest`, `gradle :app:processReleaseManifest`, and analysis of `manifest-merger-debug-report.txt` and `manifest-merger-release-report.txt`:
+
+| Permission | Direct App Manifest | Merged Debug Manifest | Merged Release Manifest | Contributing Artifact(s) |
+|---|---|---|---|---|
+| `android.permission.CAMERA` | **YES** | **YES** | **YES** | App Manifest |
+| `android.permission.POST_NOTIFICATIONS` | **YES** | **YES** | **YES** | App Manifest |
+| `android.permission.RECEIVE_BOOT_COMPLETED` | **YES** | **YES** | **YES** | App Manifest |
+| `android.permission.INTERNET` | **NO** | **YES** | **YES** | `com.google.firebase:firebase-ai:17.13.0`<br>`com.google.android.recaptcha:recaptcha:18.7.1` |
+| `android.permission.ACCESS_NETWORK_STATE` | **NO** | **YES** | **YES** | `androidx.work:work-runtime:2.10.0`<br>`com.google.firebase:firebase-ai:17.13.0` |
+| `android.permission.WAKE_LOCK` | **NO** | **YES** | **YES** | `androidx.work:work-runtime:2.10.0` |
+| `android.permission.FOREGROUND_SERVICE` | **NO** | **YES** | **YES** | `androidx.work:work-runtime:2.10.0` |
+| `com.google.android.providers.gsf.permission.READ_GSERVICES` | **NO** | **YES** | **YES** | `com.google.firebase:firebase-ai:17.13.0` |
+
+> **Critical Architecture Finding:** While `android.permission.INTERNET` is present in both merged debug and release manifests, it is **NOT** declared in the direct `app/src/main/AndroidManifest.xml`. It enters the build strictly via transient inheritance from `firebase-ai` and `recaptcha`. If these unused dependencies are removed, the app will lose `INTERNET` access unless explicitly added to `AndroidManifest.xml` (Logged as **COMP-F03**).
+
+---
+
+### 3. Location Permissions & Hardware Telemetry Audit
+
+| Hardware Capability / API | Declared in Manifest? | Present in Dependency Catalog? | Bundled in build.gradle.kts? | Used in Source Code? |
+|---|---|---|---|---|
+| `android.permission.ACCESS_FINE_LOCATION` | **NO** | N/A | N/A | **NO** |
+| `android.permission.ACCESS_COARSE_LOCATION` | **NO** | N/A | N/A | **NO** |
+| `android.permission.ACCESS_BACKGROUND_LOCATION` | **NO** | N/A | N/A | **NO** |
+| `com.google.android.gms:play-services-location` | N/A | **YES** (`libs.play.services.location`) | **COMMENTED OUT** (`// implementation(libs.play.services.location)`) | **NO** |
+| `FusedLocationProviderClient` | N/A | N/A | N/A | **NO** (0 usages) |
+| `LocationManager` | N/A | N/A | N/A | **NO** (0 usages) |
+
+The application does not access device GPS, Wi-Fi location, cell tower triangulation, or on-device location hardware.
+
+---
+
+### 4. Storage & Media Permissions Audit
+
+| Storage Permission | Declared in Manifest? | Used in Source Code? | Mechanism Used Instead |
+|---|---|---|---|
+| `android.permission.READ_EXTERNAL_STORAGE` | **NO** | **NO** | Android Photo Picker (`ActivityResultContracts.PickVisualMedia`) |
+| `android.permission.WRITE_EXTERNAL_STORAGE` | **NO** | **NO** | Scoped Storage / Private internal app storage |
+| `android.permission.READ_MEDIA_IMAGES` | **NO** | **NO** | Android Photo Picker (`ActivityResultContracts.PickVisualMedia`) |
+| `android.permission.READ_MEDIA_VISUAL_USER_SELECTED` | **NO** | **NO** | Android Photo Picker |
+
+The application uses zero-permission media selection and scoped storage.
+
+---
+
+### 5. Exported Android Components & FileProvider
+
+| Component | Class | Exported | Configuration & Permissions | Privacy & Security Risk Assessment |
+|---|---|---|---|---|
+| `<activity>` | `com.example.MainActivity` | `true` | `android.intent.action.MAIN`<br>`android.intent.category.LAUNCHER` | **Safe.** Standard app launcher entry point. Supports `onNewIntent` for deep navigation when user taps local notification (`EXTRA_TRIP_ID`). |
+| `<provider>` | `androidx.core.content.FileProvider` | `false` | `android:authorities="${applicationId}.fileprovider"`<br>`android:grantUriPermissions="true"` | **Safe.** Non-exported. Safely generates temporary, permission-granted `content://` URIs for sharing exports and camera captures. |
+
+**FileProvider Path Mapping (`app/src/main/res/xml/file_paths.xml`):**
+```xml
 <paths>
     <cache-path name="photos" path="photos/" />
     <cache-path name="stamps" path="stamps/" />
@@ -58,40 +145,83 @@ Travel Stamp is architected as an **offline-first, local-custody personal travel
 </paths>
 ```
 
-- `cache-path "photos"` (`cacheDir/photos/`): Contains temporary raw camera capture files (`JPEG_<timestamp>_temp.jpg`) shared with the camera app.
-- `cache-path "stamps"` (`cacheDir/stamps/`): Contains generated stamp card PNG files (`TravelStamp_<code_name>.png`) shared via `Intent.ACTION_SEND`.
-- `cache-path "posters"` (`cacheDir/posters/`): Contains generated stamp poster PNG files (`TravelStamp_Poster_...png`) shared via `Intent.ACTION_SEND`.
-- `cache-path "backups"` (`cacheDir/backups/`): Contains generated `.tsbackup` ZIP archives shared via `Intent.ACTION_SEND`.
-- `files-path "moments"` (`filesDir/moments/`): Private internal storage containing permanent moment photos. Exposed via FileProvider only when explicitly requested for external sharing or backup export.
+---
+
+## Section D: Android Backup & Data Extraction Truth
+
+Physical inspection of `app/src/main/AndroidManifest.xml`, `app/src/main/res/xml/backup_rules.xml`, and `app/src/main/res/xml/data_extraction_rules.xml` reveals:
+
+### 1. Actual Manifest Configuration
+```xml
+android:allowBackup="true"
+android:dataExtractionRules="@xml/data_extraction_rules"
+android:fullBackupContent="@xml/backup_rules"
+```
+
+### 2. Actual Content of `res/xml/backup_rules.xml`
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!--
+   <include domain="sharedpref" path="."/>
+   <exclude domain="sharedpref" path="device.xml"/>
+-->
+</full-backup-content>
+```
+
+### 3. Actual Content of `res/xml/data_extraction_rules.xml`
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- TODO: Use <include> and <exclude> to control what is backed up.
+        <include .../>
+        <exclude .../>
+        -->
+    </cloud-backup>
+    <!--
+    <device-transfer>
+        <include .../>
+        <exclude .../>
+    </device-transfer>
+    -->
+</data-extraction-rules>
+```
+
+### 4. Verified Backup Behavior:
+- **`android:allowBackup`:** Explicitly set to `true`.
+- **Cloud Backup Explicit Rules:** **NONE.** The `<cloud-backup>` tag is empty. All `<include>` and `<exclude>` tags are commented-out sample code.
+- **Device Transfer Explicit Rules:** **NONE.** The `<device-transfer>` tag is commented out completely.
+- **Legacy Full Backup Explicit Rules:** **NONE.** The `<full-backup-content>` tag is empty with commented-out examples.
+- **Implicit / Default OS Behavior:**
+  - On Android 12+ (API 31+), because `<data-extraction-rules>` has an empty `<cloud-backup>` block and no active `<include>` rules, Google Cloud Backup backs up nothing from cloud backup unless rules are defined, while device-to-device transfer behavior without `<device-transfer>` defaults to backing up all app data.
+  - On Android 11 and lower (API < 31), an empty `<full-backup-content>` file defaults to backing up **all** private app files (including Room database, moments photos, and SharedPreferences) to Google Drive Auto Backup.
+  - **Correction of Previous Claim:** `sharedpref/travel_stamp_prefs.xml` is **NOT** explicitly excluded in current source code. It is fully subject to OS-default backup behavior (Logged as **COMP-F01**).
 
 ---
 
-### 4. System Backup & Data Extraction Configuration
+## Section E: Room Database Schema & Data Dictionary
 
-In `app/src/main/AndroidManifest.xml`:
-- `android:allowBackup="true"`
-- `android:dataExtractionRules="@xml/data_extraction_rules"`
-- `android:fullBackupContent="@xml/backup_rules"`
+The local SQLite database is managed by Room (`TravelStampDatabase.kt`), configured with database file name `travel_stamp_database` at **Schema Version 8** (verified from source `@Database(..., version = 8, exportSchema = true)`).
 
-**Rules Analysis (`data_extraction_rules.xml` and `backup_rules.xml`):**
-- `<cloud-backup>`: Explicitly excludes `sharedpref/travel_stamp_prefs.xml`.
-- `<device-transfer>`: Explicitly excludes `sharedpref/travel_stamp_prefs.xml`.
-- **Database & Media Inclusion:** Room database files (`travel_stamp_database*`) and internal moment photos (`files/moments/`) are included in standard Android device-to-device transfers and Google Drive cloud backups unless user disables Google One backup at system level.
+### Entity Manifest (6 Entities):
+1. `TripEntity` (`trips`)
+2. `ChecklistItemEntity` (`checklist_items`)
+3. `MomentEntity` (`moments`)
+4. `TravelStampEntity` (`travel_stamps`)
+5. `StampSequenceEntity` (`stamp_sequence`)
+6. `JourneyLocationEntity` (`journey_locations`)
 
 ---
-
-## Section C: Room Database Schema & Data Dictionary
-
-The local SQLite database is managed by Room (`TravelStampDatabase.kt`), configured with database file name `travel_stamp_database` at **Schema Version 3**.
 
 ### Table 1: `trips` (`com.example.data.local.entity.TripEntity`)
 
-| Column Name | SQLite Data Type | Nullable | Primary / Foreign Key / Index | Description & Privacy Classification |
+| Column Name | SQLite Data Type | Nullable | Key / Index | Description & Privacy Classification |
 |---|---|---|---|---|
 | `id` | `INTEGER` | No | Primary Key (`autoGenerate = true`) | Local auto-incrementing surrogate primary key. |
-| `uuid` | `TEXT` | No | Unique Index (`uuid`) | Random UUID v4 for global sync/export stability. |
-| `name` | `TEXT` | No | None | User-assigned expedition/trip name (e.g. "Himalayan Trek"). **PII: User Journal Data**. |
-| `destination` | `TEXT` | No | None | Destination name (e.g. "Manali, Himachal Pradesh"). **PII: User Travel History**. |
+| `uuid` | `TEXT` | No | Unique Index (`uuid`) | Random UUID v4 for sync/export stability. |
+| `name` | `TEXT` | No | None | User-assigned expedition/trip name. **PII: User Journal Data**. |
+| `destination` | `TEXT` | No | None | Destination name. **PII: User Travel History**. |
 | `date` | `TEXT` | No | None | ISO date string (`YYYY-MM-DD`). Planned or travel date. |
 | `startTimeMinutes` | `INTEGER` | Yes | None | Minute of day (0..1439, e.g. 540 = 09:00 AM) for trip departure. |
 | `peopleCount` | `INTEGER` | No | None | Number of travelers accompanying the journey (default: 1). |
@@ -110,7 +240,7 @@ The local SQLite database is managed by Room (`TravelStampDatabase.kt`), configu
 
 ### Table 2: `moments` (`com.example.data.local.entity.MomentEntity`)
 
-| Column Name | SQLite Data Type | Nullable | Primary / Foreign Key / Index | Description & Privacy Classification |
+| Column Name | SQLite Data Type | Nullable | Key / Index | Description & Privacy Classification |
 |---|---|---|---|---|
 | `id` | `INTEGER` | No | Primary Key (`autoGenerate = true`) | Local auto-incrementing surrogate primary key. |
 | `uuid` | `TEXT` | No | Unique Index (`uuid`) | Random UUID v4 for moment identification. |
@@ -128,12 +258,12 @@ The local SQLite database is managed by Room (`TravelStampDatabase.kt`), configu
 
 ### Table 3: `checklist_items` (`com.example.data.local.entity.ChecklistItemEntity`)
 
-| Column Name | SQLite Data Type | Nullable | Primary / Foreign Key / Index | Description & Privacy Classification |
+| Column Name | SQLite Data Type | Nullable | Key / Index | Description & Privacy Classification |
 |---|---|---|---|---|
 | `id` | `INTEGER` | No | Primary Key (`autoGenerate = true`) | Local surrogate key. |
 | `uuid` | `TEXT` | No | Unique Index (`uuid`) | Random UUID v4. |
 | `tripId` | `INTEGER` | No | FK -> `trips(id)` ON DELETE CASCADE, Index | Associated trip identifier. |
-| `text` | `TEXT` | No | None | Item label/content (e.g. "Passport", "Trekking Boots"). **User Personal Data**. |
+| `text` | `TEXT` | No | None | Item label/content (e.g. "Passport", "Boots"). **User Personal Data**. |
 | `isCompleted` | `INTEGER` (Boolean) | No | None | Checkbox completion status. |
 | `sortOrder` | `INTEGER` | No | None | Ordinal position in checklist UI. |
 | `createdAt` | `INTEGER` | No | None | Creation timestamp. |
@@ -144,7 +274,7 @@ The local SQLite database is managed by Room (`TravelStampDatabase.kt`), configu
 
 ### Table 4: `travel_stamps` (`com.example.data.local.entity.TravelStampEntity`)
 
-| Column Name | SQLite Data Type | Nullable | Primary / Foreign Key / Index | Description & Privacy Classification |
+| Column Name | SQLite Data Type | Nullable | Key / Index | Description & Privacy Classification |
 |---|---|---|---|---|
 | `id` | `INTEGER` | No | Primary Key (`autoGenerate = true`) | Local surrogate key. |
 | `uuid` | `TEXT` | No | Unique Index (`uuid`) | Random UUID v4. |
@@ -153,13 +283,13 @@ The local SQLite database is managed by Room (`TravelStampDatabase.kt`), configu
 | `stampCode` | `TEXT` | No | None | Formatted official stamp code (e.g. `"#0001"`). |
 | `title` | `TEXT` | No | None | Stamp title derived from trip name. |
 | `destination` | `TEXT` | No | None | Stamp destination text. |
-| `dateText` | `TEXT` | No | None | Formatted date string rendered on the visual stamp seal. |
-| `peopleCount` | `INTEGER` | No | None | Count of companions commemorated on the stamp. |
-| `momentsCount` | `INTEGER` | No | None | Snapshot count of journal entries associated with the stamp. |
+| `dateText` | `TEXT` | No | None | Formatted date string rendered on visual seal. |
+| `peopleCount` | `INTEGER` | No | None | Count of companions commemorated on stamp. |
+| `momentsCount` | `INTEGER` | No | None | Snapshot count of journal entries associated with stamp. |
 | `inkColorHex` | `TEXT` | No | None | Hexadecimal color string (e.g. `"#1E3A2F"`) for visual rendering. |
 | `stampStyle` | `TEXT` | No | None | Vector art style archetype (`"MOUNTAIN"`, `"COMPASS"`, etc.). |
 | `inspectionText`| `TEXT` | No | None | Official certification motto string. |
-| `issuedAt` | `INTEGER` | No | None | Epoch timestamp when the stamp was formally sealed. |
+| `issuedAt` | `INTEGER` | No | None | Epoch timestamp when stamp was sealed. |
 | `createdAt` | `INTEGER` | No | None | Record creation timestamp. |
 | `updatedAt` | `INTEGER` | No | None | Record update timestamp. |
 | `completedAt` | `INTEGER` | Yes | None | Trip completion epoch timestamp. |
@@ -170,14 +300,14 @@ The local SQLite database is managed by Room (`TravelStampDatabase.kt`), configu
 
 ### Table 5: `journey_locations` (`com.example.data.local.entity.JourneyLocationEntity`)
 
-| Column Name | SQLite Data Type | Nullable | Primary / Foreign Key / Index | Description & Privacy Classification |
+| Column Name | SQLite Data Type | Nullable | Key / Index | Description & Privacy Classification |
 |---|---|---|---|---|
 | `id` | `INTEGER` | No | Primary Key (`autoGenerate = true`) | Local surrogate key. |
 | `uuid` | `TEXT` | No | Unique Index (`uuid`) | Random UUID v4. |
 | `tripId` | `INTEGER` | No | FK -> `trips(id)` ON DELETE CASCADE, Index | Associated trip identifier. |
-| `label` | `TEXT` | No | None | Landmark or stop name (e.g. "Rohtang Pass"). **Geospatial Reference**. |
-| `latitude` | `REAL` (Double) | No | None | Geographic latitude (-90.0..90.0). Selected via search or curated list. |
-| `longitude` | `REAL` (Double) | No | None | Geographic longitude (-180.0..180.0). Selected via search or curated list. |
+| `label` | `TEXT` | No | None | Landmark or stop name. **Geospatial Reference**. |
+| `latitude` | `REAL` (Double) | No | None | Geographic latitude (-90.0..90.0). Selected via search or curated catalog. |
+| `longitude` | `REAL` (Double) | No | None | Geographic longitude (-180.0..180.0). Selected via search or curated catalog. |
 | `sortOrder` | `INTEGER` | No | None | Itinerary display order index. |
 | `createdAt` | `INTEGER` | No | None | Creation timestamp. |
 | `updatedAt` | `INTEGER` | No | None | Modification timestamp. |
@@ -199,15 +329,74 @@ Managed by `UserPreferencesRepositoryImpl.kt` (`context.getSharedPreferences("tr
 
 | Preference Key | Value Type | Default | Description |
 |---|---|---|---|
-| `key_onboarding_completed` | `Boolean` | `false` | Tracks whether the user completed initial app onboarding walkthrough. |
+| `key_onboarding_completed` | `Boolean` | `false` | Tracks whether user completed onboarding walkthrough. |
 | `key_theme_mode` | `String` | `"SYSTEM"` | Selected application appearance: `"SYSTEM"`, `"LIGHT"`, or `"DARK"`. |
 | `key_pre_trip_reminders` | `Boolean` | `true` | Master global toggle enabling/disabling all WorkManager journey notifications. |
 
 ---
 
-## Section D: Media & Photo Lifecycle Flow
+## Section F: Dependency & Runtime Matrix
 
-The application handles user photos through a strict pipeline designed to protect privacy, prevent memory leaks, downsample high-resolution images safely, and eliminate unintended data leakage.
+| Artifact / Library | Version in Catalog | Status in `app/build.gradle.kts` | Imported in Source? | Initialized at Runtime? | Actively Used for User Data? | Purpose / Assessment |
+|---|---|---|---|---|---|---|
+| **Firebase BOM** | `34.15.0` (`libs.firebase.bom`) | **BUNDLED DEPENDENCY** (`implementation(platform(libs.firebase.bom))`) | **NO** | **NO** | **NO** | Manages versions for Firebase dependencies. |
+| **Firebase AI** | Undefined (BOM managed, `libs.firebase.ai`) | **BUNDLED DEPENDENCY** (`implementation(libs.firebase.ai)`) | **NO** | **NO** | **NO** | Unused. Contributes `INTERNET` and `ACCESS_NETWORK_STATE` permissions to merged manifest. |
+| **Firebase App Check** | Undefined (BOM managed, `libs.firebase.appcheck.recaptcha`) | **BUNDLED DEPENDENCY** (`implementation(libs.firebase.appcheck.recaptcha)`) | **NO** | **NO** | **NO** | Unused. Contributes `recaptcha` and `INTERNET` to merged manifest. |
+| **Firebase Auth** | Undefined (BOM managed, `libs.firebase.auth`) | **COMMENTED OUT** (`// implementation(libs.firebase.auth)`) | **NO** | **NO** | **NO** | Not compiled into APK. |
+| **Firebase Firestore** | Undefined (BOM managed, `libs.firebase.firestore`) | **COMMENTED OUT** (`// implementation(libs.firebase.firestore)`) | **NO** | **NO** | **NO** | Not compiled into APK. |
+| **Firebase Analytics** | **NOT PRESENT** | **NOT PRESENT** | **NO** | **NO** | **NO** | Not present anywhere in the project. |
+| **Firebase Crashlytics** | **NOT PRESENT** | **NOT PRESENT** | **NO** | **NO** | **NO** | Not present anywhere in the project. |
+| **Google Play Services Location** | `21.3.0` (`libs.play.services.location`) | **COMMENTED OUT** (`// implementation(libs.play.services.location)`) | **NO** | **NO** | **NO** | Not compiled into APK. |
+| **Google Credential Manager / Google ID** | `1.5.0` / `1.1.1` | **COMMENTED OUT** | **NO** | **NO** | **NO** | Not compiled into APK. |
+| **AndroidX WorkManager** | `2.10.0` (`libs.workRuntime`) | **BUNDLED DEPENDENCY** (`implementation(libs.androidx.work.runtime.ktx)`) | **YES** | **YES** | **YES** (Local notifications) | Schedules local trip reminders. |
+| **OkHttp & Logging Interceptor** | `4.10.0` | **BUNDLED DEPENDENCY** | `OkHttpClient` **YES**; `HttpLoggingInterceptor` **NO** | `OkHttpClient` **YES** | **YES** (Place search HTTP transport) | HTTP client for place search; logging interceptor not attached. |
+| **Retrofit & Moshi** | `2.12.0` / `1.15.2` | **BUNDLED DEPENDENCY** | **YES** | **YES** | **YES** | REST client & JSON parsing for location search. |
+| **Coil Compose** | `2.7.0` | **BUNDLED DEPENDENCY** | **YES** | **YES** | **YES** | Async image rendering for local photos & icons. |
+| **Room Runtime & KSP** | `2.7.0` | **BUNDLED DEPENDENCY** | **YES** | **YES** | **YES** | SQLite local database engine. |
+
+---
+
+## Section G: Network Egress & Place Search Implementation
+
+### 1. Place Search Request Specification (from Source Code)
+- **Base URL:** `https://travel-stamp-api.prashantdasnur11.workers.dev/` (`AppContainer.kt:104`)
+- **Endpoint:** `v1/places/search` (`ProxyLocationSearchDataSource.kt:26`)
+- **HTTP Method:** `GET`
+- **Query Parameter:** `q` (e.g. `GET /v1/places/search?q=Manali`)
+- **Query Validation & Limits:**
+  - `query.trim()`: Non-empty check (`ProxyLocationSearchDataSource.kt:38`, `TravelViewModel.kt:114`)
+  - Maximum query length enforced: **250 characters** (`LocationSearchRepositoryImpl.kt:15-17`)
+- **Client-Side OkHttp Configuration:**
+  - Connect Timeout: 10 seconds
+  - Read Timeout: 10 seconds
+  - Attached Interceptors: **NONE** (`OkHttpClient.Builder().connectTimeout(...).readTimeout(...).build()`).
+  - No `HttpLoggingInterceptor` is attached.
+  - Cookies / Auth Headers / Device Identifiers: **NONE** added by application code.
+- **Payload Fields Returned:**
+  - `candidates`: List of place objects, each containing:
+    - `label`: String (name of place/landmark)
+    - `secondaryLabel`: String? (state/country descriptor)
+    - `latitude`: Double? (-90.0..90.0)
+    - `longitude`: Double? (-180.0..180.0)
+    - `category`: String? (place type)
+  - Result truncated locally to a maximum of 5 items (`candidates.take(5)`).
+- **Server-Side Behavior Assessment:**
+  - Server-side IP logging, cloud worker edge analytics, upstream geocoding provider data retention: **EXTERNAL VERIFICATION REQUIRED** (cannot be determined from client Android repository).
+
+### 2. Outbound Intent Boundary Inventory
+
+| Source File & Line | Intent Action | Destination / MIME | Data Handed Over | User Trigger |
+|---|---|---|---|---|
+| `AboutScreen.kt:215` | `Intent.ACTION_VIEW` | `https://travelstamp.app/privacy` | External browser URI dispatch | User taps "Privacy Policy" link |
+| `AboutScreen.kt:256` | `Intent.ACTION_SENDTO` | `mailto:support@travelstamp.app` | Recipient email address & prefilled subject | User taps "Contact & Support" |
+| `LinkAnnotationUtils.kt:86` | `Intent.ACTION_VIEW` | External HTTP/HTTPS URI | Opens external web link from moment note | User taps hyperlink in journal |
+| `PosterExportScreen.kt:959` | `Intent.ACTION_SEND` | `image/png` | Generated poster bitmap in `cacheDir/posters/` | User taps "Share Poster" |
+| `SettingsScreen.kt:449` | `Intent.ACTION_SEND` | `application/octet-stream` | `.tsbackup` ZIP file in `cacheDir/backups/` | User taps "Export Backup" |
+| `StampExporter.kt:482` | `Intent.ACTION_SEND` | `image/png` | Generated stamp card bitmap in `cacheDir/stamps/` | User taps "Share Stamp" |
+
+---
+
+## Section H: Media, Camera & Photo Lifecycle Flow
 
 ```
 [User Camera Capture]            [Android Photo Picker]
@@ -241,220 +430,78 @@ cacheDir/photos/JPEG_..._temp.jpg   content:// URI (external provider)
      - Stores absolute path: /data/user/0/.../files/moments/moment_...jpg
 ```
 
-### Media Lifecycle Rules & Invariants:
-1. **Zero-Permission Photo Picking:** Uses standard Android Photo Picker (`ActivityResultContracts.PickVisualMedia`). Does **NOT** request broad storage permissions (`READ_EXTERNAL_STORAGE`, `READ_MEDIA_IMAGES`).
-2. **Camera Hardware Isolation:** When using `ActivityResultContracts.TakePicture()`, the camera app receives a temporary `FileProvider` URI pointing exclusively to `cacheDir/photos/`. It has no access to the app's database or private files.
-3. **EXIF Privacy Purge (`PhotoUtils.kt:356-371`):** Before storing photos permanently in `filesDir/moments/`, `PhotoUtils` invokes Android's `ExifInterface` and sets the following GPS attributes to `null`:
-   - `ExifInterface.TAG_GPS_LATITUDE`
-   - `ExifInterface.TAG_GPS_LATITUDE_REF`
-   - `ExifInterface.TAG_GPS_LONGITUDE`
-   - `ExifInterface.TAG_GPS_LONGITUDE_REF`
-   - `ExifInterface.TAG_GPS_ALTITUDE`
-   - `ExifInterface.TAG_GPS_ALTITUDE_REF`
-   - `ExifInterface.TAG_GPS_TIMESTAMP`
-   - `ExifInterface.TAG_GPS_DATESTAMP`
-   - `ExifInterface.TAG_GPS_PROCESSING_METHOD`
-4. **Sandboxed Image Loading:** In `TravelStampApp.kt`, Coil is configured with a 25% memory cache and a dedicated private disk cache at `cacheDir/image_cache/` (50 MB limit).
-5. **Cascading File Deletion (`PhotoUtils.safeDeleteInternalImage`):** When a moment or trip is permanently deleted, the associated file in `filesDir/moments/` is unlinked. Security checks ensure only files starting with `context.filesDir` or `context.cacheDir` can be deleted, preventing path traversal attacks.
+### Media Verification Truth:
+1. **Camera Permission:** Declared in manifest (`android.permission.CAMERA`). Used exclusively for capturing photos via `ActivityResultContracts.TakePicture()`. Camera file destination is isolated to `cacheDir/photos/`.
+2. **Photo Picker:** App uses zero-permission `ActivityResultContracts.PickVisualMedia()`. No broad storage permissions are requested.
+3. **EXIF GPS Metadata Purge:** `PhotoUtils.kt:356-371` explicitly nullifies all latitude, longitude, altitude, timestamp, and processing method EXIF tags before writing photos to permanent internal storage.
+4. **Internal Storage:** Permanent photos are stored in app-private directory `filesDir/moments/`.
+5. **Temporary Cache Cleanliness:** Scratch files in `cacheDir/scratch_picker/` are deleted immediately; editor cache files in `cacheDir/photo_editor/` are auto-pruned to a rolling window of 5 files.
 
 ---
 
-## Section E: Journey Location & Geospatial Data Flow
+## Section I: Background Work, Notifications & Reminders
 
-### 1. Hardware Sensor Assessment
-- **GPS / GNSS:** **NOT USED.** The application does not interface with `android.location.LocationManager` or Google Play Services `FusedLocationProviderClient`.
-- **Sensors:** Accelerometer, Gyroscope, Magnetometer/Compass are **NOT USED**.
-- **Wi-Fi / Cell Telemetry:** No BSSID, SSID, or Cell ID scanning is performed.
-
-### 2. Location Search Egress (`ProxyLocationSearchDataSource.kt`)
-When a user searches for an itinerary stop or destination, the app queries an external proxy:
-- **Protocol & Endpoint:** `GET https://travel-stamp-api.prashantdasnur11.workers.dev/v1/places/search?q={query}`
-- **Data Sent:** Only the user-entered search query string `q` (sanitized, trimmed, max 250 characters).
-- **Data NOT Sent:** No device advertising ID, Android ID, user UUID, IP-forwarding headers, or location coordinates are appended.
-- **Data Received:** A JSON array of place candidates containing `label`, `secondaryLabel`, `latitude`, `longitude`, `category`.
-- **Validation:** Coordinates are validated locally (`lat in -90.0..90.0`, `lon in -180.0..180.0`, non-NaN, non-infinite) before being stored in Room.
-
-### 3. Offline Curated & History Suggestions
-- **Bundled Data (`BundledSuggestionSourceImpl.kt`):** A hardcoded catalog of iconic landmarks and monuments (e.g. Gateway of India, Taj Mahal, India Gate, Charminar). Accessed 100% offline.
-- **Trip History Suggestions (`UserHistorySuggestionSourceImpl.kt`):** Suggests previous destination names entered by the user from active Room `trips`. Processed 100% offline.
-
-### 4. Vector Map Rendering (`InkMapSpatialEngine.kt`)
-- **Map Visualizer:** The vintage Ink Map screen does **NOT** use Google Maps SDK, Mapbox, or external raster/vector tile servers.
-- **Math Engine:** Uses an offline 2D spatial coordinate engine (`InkMapSpatialEngine.kt`) that normalizes geographic coordinates into viewport coordinates and performs local spatial clustering via Euclidean distance formulas. Zero network tile requests are made.
+1. **Permissions & Schedulers:**
+   - Declares `android.permission.POST_NOTIFICATIONS` in manifest (requested at runtime on Android 13+).
+   - Declares `android.permission.RECEIVE_BOOT_COMPLETED` in manifest. There are **zero application-owned broadcast receivers**; this permission is utilized exclusively by AndroidX WorkManager's internal background alarms to reschedule trip reminders across device reboots.
+2. **WorkManager Worker:**
+   - Worker class: `com.example.data.notification.TripReminderWorker` (extends `CoroutineWorker`).
+   - Unique work name: `trip_reminder_{tripId}` with `ExistingWorkPolicy.REPLACE`.
+3. **Fail-Closed Privacy Gates (`TripReminderWorker.evaluateSafety`):**
+   - Aborts if `tripId <= 0` or trigger timestamp <= 0.
+   - Aborts if trip record is missing or soft-deleted (`deletedAt != null`).
+   - Aborts if trip status is `COMPLETED`, `stampEarned == true`, or `completedAt != null`.
+   - Aborts if user disabled master reminder toggle (`key_pre_trip_reminders == false`) or trip-level toggle (`trip.reminderEnabled == false`).
+   - Aborts if worker execution is delayed by more than 2 hours (`MAX_EXECUTION_LATENESS`).
 
 ---
 
-## Section F: Network Egress & Third-Party Service Inventory
+## Section J: Backup, Restore & Archive Architecture
 
-### Comprehensive Endpoint Inventory
-
-| Endpoint / URL | Protocol & Method | Trigger / Caller | Payload / Query | Authentication | Third-Party Entity |
-|---|---|---|---|---|---|
-| `https://travel-stamp-api.prashantdasnur11.workers.dev/v1/places/search` | `HTTPS GET` | Location search input in trip planning (`ProxyLocationSearchDataSource.kt`) | Query param `q=<search_text>` (max 250 chars) | None (Public Cloudflare Worker proxy) | Cloudflare, Inc. (Worker Host) / Developer Worker |
-| `https://travelstamp.app/privacy` | `HTTPS GET` (External Browser) | User taps "Privacy Policy" in About Screen (`AboutScreen.kt:215`) | None (Opened via Android `Intent.ACTION_VIEW`) | None | Developer Website (travelstamp.app) |
-| `mailto:support@travelstamp.app` | System Mail Client | User taps "Contact & Support" in About Screen (`AboutScreen.kt:257`) | Prefilled subject `"Travel Stamp Support Request"` via `Intent.ACTION_SENDTO` | User email client | User's chosen email provider |
-
-### Inactive / Declared-Only Dependencies Audit
-
-| Dependency / Capability | Where Declared | Source Code Status | Verification Proof |
-|---|---|---|---|
-| **Firebase AI** (`firebase-ai`) | `gradle/libs.versions.toml` | **Completely Unused** | Not present in `app/build.gradle.kts`; 0 import statements in `app/src/main/`. |
-| **Firebase AppCheck** (`firebase-appcheck-playintegrity`) | `gradle/libs.versions.toml` | **Completely Unused** | Not present in `app/build.gradle.kts`; 0 import statements in `app/src/main/`. |
-| **Firebase Auth** (`firebase-auth`) | `gradle/libs.versions.toml` | **Completely Unused** | Not present in `app/build.gradle.kts`; 0 import statements in `app/src/main/`. |
-| **Firebase Firestore** (`firebase-firestore-ktx`) | `gradle/libs.versions.toml` | **Completely Unused** | Not present in `app/build.gradle.kts`; 0 import statements in `app/src/main/`. |
-| **Gemini Server-Side API** | `metadata.json` (`majorCapabilities`) | **Completely Unused** | Template platform capability flag; no code calls Gemini API. |
-| **Secrets Gradle Plugin** | `app/build.gradle.kts` & `.env` | **No Active Runtime Calls** | Plugin generates `BuildConfig`, but no API key is transmitted over network by app code. |
+1. **Manual Backup Export Pipeline (`BackupManager.createExportFile`):**
+   - Export format: `.tsbackup` archive (standard ZIP format).
+   - Temporary file path: `cacheDir/backups/TravelStamp_Backup_<yyyy-MM-dd>.tsbackup`.
+   - Contents:
+     - `manifest.json`: App ID, Schema Version (3 in JSON export serializer), timestamp, item counts.
+     - `data.json`: Serialized trips, moments, checklists, stamps, sequence, locations.
+     - `media/`: Physical JPEG files from `filesDir/moments/` associated with active moments.
+   - Egress: Dispatched via native Android share sheet (`Intent.ACTION_SEND`).
+2. **Manual Backup Import Pipeline (`BackupManager.importBackup`):**
+   - Stream inspection detects `.tsbackup` ZIP header or legacy `.json`.
+   - **Zip Slip Defense (`BackupManager.kt:349-354`):** Verifies that `canonicalDest.startsWith(tempDir.canonicalPath)` before extracting any archive entry, preventing path traversal attacks.
+   - Restores database records in an atomic Room transaction and copies media to `filesDir/moments/`.
 
 ---
 
-## Section G: Backup, Restore & Archive Architecture
+## Section K: Logging, Diagnostics & Telemetry Audit
 
-### 1. Manual Backup Export Pipeline (`BackupManager.createExportFile`)
-When the user triggers "Export Backup" in Settings (`SettingsScreen.kt:449`):
-1. **Format:** Packaged as a `.tsbackup` archive (standard ZIP file format).
-2. **Temporary Location:** Written to `context.cacheDir/backups/TravelStamp_Backup_<yyyy-MM-dd>.tsbackup`.
-3. **Archive Manifest (`manifest.json`):**
-   - Application ID (`"TravelStamp"`)
-   - Manifest Version (`"2.0"`)
-   - Database Schema Version (`3`)
-   - Export Epoch Millisecond Timestamp
-   - Entity counts (`trips`, `stamps`, `moments`, `checklistItems`, `journeyLocations`, `mediaFiles`)
-4. **Database Payload (`data.json`):**
-   - Full JSON serialization of all trips, checklist items, travel stamps, stamp sequence counter, journey locations, and moment notes.
-   - Moment image paths are remapped to portable relative archive paths (`media/{moment_uuid}_{filename}`).
-5. **Media Bundling:**
-   - Every physical JPEG file in `filesDir/moments/` associated with an active moment is read and written into the `media/` folder of the ZIP archive.
-6. **Egress Boundary:**
-   - The generated archive is handed to Android's native share sheet via `Intent.ACTION_SEND` (`application/octet-stream`). The user decides where to send it (e.g. Google Drive, local Downloads, WhatsApp, email, SD card).
-
-### 2. Manual Backup Import Pipeline (`BackupManager.importBackup`)
-When the user triggers "Import Backup":
-1. **Stream Inspection:** Detects whether file is a `.tsbackup` (ZIP header `0x50, 0x4B, 0x03, 0x04`) or legacy `.json`.
-2. **Security Hardening (Zip Slip Defense, `BackupManager.kt:349-354`):**
-   ```kotlin
-   val safeOutputFile = File(tempDir, entryName)
-   val canonicalDest = safeOutputFile.canonicalPath
-   if (!canonicalDest.startsWith(tempDir.canonicalPath)) {
-       throw SecurityException("Zip Slip vulnerability detected in entry: $entryName")
-   }
-   ```
-   Prevents malicious archives with `../` relative path traversals from overwriting arbitrary system or app files.
-3. **Restoration of Media & Database:**
-   - Photo files from `media/` are restored to `context.filesDir/moments/`.
-   - Database records are inserted within an atomic Room transaction (`database.withTransaction`). Foreign keys are reconciled via UUIDs.
-
----
-
-## Section H: Background Work, Notifications & Reminders Flow
-
-### 1. Background Work Architecture
-- **Framework:** AndroidX WorkManager.
-- **Worker Class:** `com.example.data.notification.TripReminderWorker` (extends `CoroutineWorker`).
-- **Scheduling Class:** `TripReminderSchedulerImpl.kt`.
-- **Trigger Strategy:** Exact-delay one-time work requests (`OneTimeWorkRequestBuilder<TripReminderWorker>()`) enqueued with unique name `trip_reminder_{tripId}` and `ExistingWorkPolicy.REPLACE`.
-
-### 2. Fail-Closed Privacy & Safety Gates (`TripReminderWorker.evaluateSafety`)
-Before a notification is posted, `evaluateSafety` runs 6 deterministic gates:
-1. **Input Validation:** Aborts if `tripId <= 0`, preset is invalid, or trigger timestamp <= 0.
-2. **Tombstone & Existence Check:** Aborts if trip does not exist in Room or `deletedAt != null`.
-3. **Lifecycle State Check:** Aborts if trip status is `COMPLETED`, `stampEarned == true`, or `completedAt != null`.
-4. **Departure Time Validation:** Aborts if `startTimeMinutes` is corrupted or out of range.
-5. **Preference Gates:** Aborts if global master switch `key_pre_trip_reminders` is `false` or trip's `reminderEnabled` is `false`.
-6. **Lateness Defense:** Aborts if worker execution is delayed by more than 2 hours (`MAX_EXECUTION_LATENESS = Duration.ofHours(2)`), preventing stale, confusing middle-of-the-night alerts.
-
-### 3. Notification Presentation (`TripNotificationHelper.kt`)
-- **Channel ID:** `trip_reminders_channel` ("Journey Reminders")
-- **Channel Importance:** `NotificationManager.IMPORTANCE_DEFAULT`
-- **Notification Content:** Trip destination and departure preparation copy from `ReminderCopyProvider`.
-- **PendingIntent:** Opens `MainActivity` with `EXTRA_TRIP_ID = trip.id`.
-
----
-
-## Section I: Sharing, Intents & External Data Boundary Analysis
-
-All outbound Android Intents created by the application:
-
-| Source File & Line | Intent Action | MIME Type / URI | Data Carried Across App Boundary | User Interactivity |
-|---|---|---|---|---|
-| `AboutScreen.kt:215` | `Intent.ACTION_VIEW` | URI `https://travelstamp.app/privacy` | Opens external web browser to display privacy policy. | Interactive (User-initiated tap) |
-| `AboutScreen.kt:256` | `Intent.ACTION_SENDTO` | `mailto:support@travelstamp.app?subject=...` | Pre-fills recipient email address and subject in user's email client. | Interactive (User-initiated tap) |
-| `LinkAnnotationUtils.kt:86` | `Intent.ACTION_VIEW` | Safe HTTP/HTTPS URI from moment note | Opens user-tapped web URL in external web browser. | Interactive (User-initiated tap) |
-| `PosterExportScreen.kt:959` | `Intent.ACTION_SEND` | `image/png` | Generated poster bitmap file URI from `cacheDir/posters/`. Shared via system share sheet. | Interactive (User-initiated share) |
-| `SettingsScreen.kt:449` | `Intent.ACTION_SEND` | `application/octet-stream` | `.tsbackup` archive URI from `cacheDir/backups/`. Shared via system share sheet. | Interactive (User-initiated share) |
-| `StampExporter.kt:482` | `Intent.ACTION_SEND` | `image/png` | Generated stamp card bitmap file URI from `cacheDir/stamps/`. Shared via system share sheet. | Interactive (User-initiated share) |
-
----
-
-## Section J: Logging, Diagnostics & Telemetry Audit
-
-### 1. Telemetry & Analytics SDKs
-- **Google Analytics / Firebase Analytics:** **NOT PRESENT.**
-- **Crashlytics / Sentry / Bugsnag:** **NOT PRESENT.**
-- **Performance Monitoring SDKs:** **NOT PRESENT.**
-- **Ad Trackers:** **NOT PRESENT.**
-
-### 2. HTTP Network Logging
-- Although `com.squareup.okhttp3:logging-interceptor` is declared in Gradle, **`HttpLoggingInterceptor` is NEVER attached to `OkHttpClient`** in `AppContainer.kt:99-102`.
-- HTTP request URLs, query parameters, headers, and responses are **never written to Android Logcat**.
-
-### 3. Logcat & Standard Output Audit (`Log.*`, `println`, `printStackTrace`)
-A codebase-wide sweep of all logging invocations in `app/src/main/`:
-
-| Source File & Line | Code Statement | Content Logged | Privacy Risk Evaluation |
-|---|---|---|---|
-| `SettingsScreen.kt:328` | `println("DEBUG_SWITCH_CLICKED: $enabled")` | Boolean switch state for journey reminders toggle. | **Negligible.** Contains no PII, user identifiers, or journey content. |
-| `PosterExporter.kt:71` | `e.printStackTrace()` | MediaStore insert/write exception stack trace. | **Low.** Standard Java exception trace on export failure. |
-| `PosterExporter.kt:112` | `e.printStackTrace()` | Cache file write exception stack trace. | **Low.** Standard Java exception trace on file I/O failure. |
-| `StampExporter.kt:474` | `e.printStackTrace()` | MediaStore insert/write exception stack trace. | **Low.** Standard Java exception trace on gallery export failure. |
-| `StampExporter.kt:503` | `e.printStackTrace()` | Stamp cache write exception stack trace. | **Low.** Standard Java exception trace on file I/O failure. |
-| `PhotoUtils.kt:378` | `e.printStackTrace()` | Photo permanent copy exception stack trace. | **Low.** Standard Java exception trace on file copy failure. |
-| `TravelNavHost.kt:107` | `e.printStackTrace()` | Navigation routing exception stack trace. | **Low.** Standard Java exception trace on navigation dispatch failure. |
-| `BackupManager.kt:397` | `e.printStackTrace()` | Backup import parsing exception stack trace. | **Low.** Standard Java exception trace on invalid backup archive. |
-| `BackupManager.kt:686` | `e.printStackTrace()` | Transaction rollback exception stack trace. | **Low.** Standard Java exception trace on DB restore failure. |
-
-**Zero Sensitive PII in Logs:** No user journey names, reflection notes, photo bytes, coordinates, or secret keys are logged to Logcat.
-
----
-
-## Section K: Comprehensive Data-Flow & Privacy Compliance Matrix
-
-| Data Element | Storage Location | Retention / Lifecycle | Network Egress | Shared Externally | User Control & Deletion |
-|---|---|---|---|---|---|
-| **Trip Metadata** (name, date, destination, people count) | Room DB (`trips` table) | Retained until trip deleted or app uninstalled | None | Only if user exports backup archive | User can edit or delete anytime; cascade deletes child moments |
-| **Moment Notes & Hyperlinks** | Room DB (`moments` table) | Retained until moment/trip deleted or app uninstalled | None | Only if user exports backup archive | User can edit or delete anytime |
-| **Expedition Photos** | Internal private storage (`filesDir/moments/`) | Retained until moment/trip deleted. EXIF GPS stripped upon ingest. | None | Only if user explicitly shares poster/stamp or exports backup | Deleted when moment is deleted (`safeDeleteInternalImage`) |
-| **Camera Scratch Copies** | Private cache (`cacheDir/photos/`, `cacheDir/photo_editor/`) | Temporary. Auto-pruned (max 5 working files). | None | None (Isolated FileProvider grant to camera) | Cleaned automatically by `PhotoUtils` |
-| **Checklist Items** | Room DB (`checklist_items` table) | Retained until item/trip deleted or app uninstalled | None | Only if user exports backup archive | User can check, uncheck, edit, or delete anytime |
-| **Travel Stamps & Sequence** | Room DB (`travel_stamps`, `stamp_sequence` tables) | Monotonic permanent collection log | None | Only if user shares stamp image or exports backup | Stamp can be deleted; sequence counter remains monotonic |
-| **Journey Locations** (labels, lat, lon) | Room DB (`journey_locations` table) | Retained until itinerary stop or trip deleted | None | Only if user exports backup archive | User can reorder, add, or delete stops |
-| **Location Search Query** | Ephemeral in-memory | Cleared upon search completion | Transmitted via HTTPS GET to Cloudflare Worker proxy | None | Anonymous search text only; no user or device identifier |
-| **App Settings** (theme, onboarding, reminder toggles) | SharedPreferences (`travel_stamp_prefs.xml`) | Retained until app uninstalled or cleared. Excluded from cloud backup. | None | None | Toggled in Settings screen |
-| **Backup Archives** (`.tsbackup`) | Cache (`cacheDir/backups/`) -> User Selected Target | Ephemeral in cache; permanent at user-chosen target | None by app; transferred via user share intent | Handed to user's selected app via `Intent.ACTION_SEND` | User owns archive file directly |
+1. **Crashlytics / Analytics:**
+   - No Google Analytics, Firebase Analytics, Crashlytics, Sentry, or Bugsnag SDKs exist in the project.
+2. **Network Payloads:**
+   - `HttpLoggingInterceptor` is not registered with `OkHttpClient`. Network request/response bodies are never written to Logcat.
+3. **Logcat / Standard Output Statements:**
+   - `SettingsScreen.kt:328`: `println("DEBUG_SWITCH_CLICKED: $enabled")` (toggles boolean state; zero PII).
+   - `PosterExporter.kt`, `StampExporter.kt`, `PhotoUtils.kt`, `TravelNavHost.kt`, `BackupManager.kt`: Standard `e.printStackTrace()` on I/O or navigation exceptions. No user notes, trip names, photos, or coordinates are logged.
 
 ---
 
 ## Section L: Google Play Data Safety Form Readiness Guide
 
-Based on the evidence audited from the source code, the following responses correspond to the **Google Play Data Safety Declaration**:
+Based on physical evidence audited from the source code:
 
-1. **Does the app collect or share any user data?**
-   - **Yes.** (Location search query is sent over HTTPS to provide functionality; user photos/backups can be shared by user action).
-2. **Is all of the user data collected by your app encrypted in transit?**
-   - **Yes.** All network requests to the Cloudflare Worker proxy use HTTPS / TLS.
-3. **Do you provide a way for users to request that their data be deleted?**
-   - **Yes.** Users can delete any trip, moment, checklist, or photo directly in the app, or clear app storage.
-4. **Data Categories:**
-   - **Location:**
-     - *Approximate / Precise Location:* **Not collected via device sensors.** Search queries for place names are ephemeral and not tied to user identity.
-   - **Photos and Videos:**
-     - *Photos:* Collected locally for app functionality (journal moments). Photos are stored on-device in private storage and are **not uploaded to any cloud server** by the app.
-   - **Personal Info:**
-     - *Name / Email:* Not collected. No account registration required.
-   - **Financial / Health / Contacts / Messages:** **None collected.**
-   - **App Info & Performance:** **No crash logs or diagnostics collected or shared.**
-   - **Device or other IDs:** **None collected.**
+| Form Question / Category | Value / Declaration | Technical Explanation |
+|---|---|---|
+| **Data Collection / Sharing** | **Yes** | Place search query text is sent over HTTPS to Cloudflare Worker proxy; photos/backups can be shared by user action. |
+| **Encryption in Transit** | **Yes** | All HTTP communication to the place search proxy uses TLS / HTTPS. |
+| **Data Deletion Mechanism** | **Yes** | Users can delete individual trips, moments, checklists, and photos, which unlinks local database records and deletes internal files. |
+| **Location Data** | **Not Collected via Hardware** | No GPS/Coarse location is accessed. Search text entered by the user is sent to the search proxy. |
+| **Photos / Videos** | **Collected locally** | Stored on-device in private internal storage. Not uploaded to any cloud server by the app. |
+| **Personal Info** | **None Collected** | No account creation, name, email, or user IDs collected by the app. |
+| **Financial / Health / Contacts** | **None Collected** | Not requested or accessed. |
+| **Device or other IDs** | **None Collected** | No advertising ID, IMEI, MAC address, or Android ID accessed or transmitted. |
+| **Crashlytics / Diagnostics** | **None Collected** | No diagnostic telemetry pipeline present. |
 
 ---
 
 **Audit Completed By:** Senior Android Privacy & Security Architecture Agent  
-**Certification Status:** VERIFIED AGAINST SOURCE CODE REPOSITORY (`Travel-Stamp-1.0`)
+**Certification Status:** RE-VERIFIED AGAINST CURRENT SOURCE TREE (`Travel-Stamp-1.0`)
