@@ -30,9 +30,9 @@ This document adheres to strict factual verification rules:
 
 | ID | Finding | Evidence | Severity | Required Action |
 |---|---|---|---|---|
-| **COMP-F01** | **Android Backup Configuration Unconstrained** | `AndroidManifest.xml:12` declares `android:allowBackup="true"`. Both `res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml` contain only commented-out templates. No explicit `<include>` or `<exclude>` rules exist. SharedPreferences (`travel_stamp_prefs.xml`), Room DB, and photos default to system backup eligibility. | **P1 (High)** | Author explicit XML rules in `data_extraction_rules.xml` and `backup_rules.xml` to define explicit inclusions/exclusions (e.g. exclude preferences or unencrypted tokens) prior to production release. |
+| **COMP-F01** | **Android Backup Configuration Unconstrained** | `AndroidManifest.xml` declares `android:allowBackup="true"`. `data_extraction_rules.xml` and `backup_rules.xml` now explicitly exclude all private app storage domains (`root`, `file`, `database`, `sharedpref`, `external`) from `<cloud-backup>`, `<device-transfer>`, and `<full-backup-content>`. | **RESOLVED (TS-COMP-01)** | Explicit XML exclusion rules configured across all Android versions to prevent automatic cloud backup and device transfer of private travel logs, database records, and photos. |
 | **COMP-F02** | **Bundled Unused Firebase / Google Play Dependencies** | `app/build.gradle.kts:80,105,115` actively bundles `platform(libs.firebase.bom)`, `libs.firebase.ai`, and `libs.firebase.appcheck.recaptcha`. However, zero Firebase classes are imported or initialized in `app/src/main/`. | **P1 (High)** | Remove or comment out unused `firebase.ai` and `firebase.appcheck.recaptcha` in `app/build.gradle.kts` to reduce APK footprint, eliminate attack surface, and prevent unintended manifest merges. |
-| **COMP-F03** | **INTERNET Permission Missing Direct Manifest Declaration** | `app/src/main/AndroidManifest.xml` does **not** declare `<uses-permission android:name="android.permission.INTERNET" />`. The app acquires `INTERNET` solely via merged AAR manifests (`com.google.firebase:firebase-ai:17.13.0` and `com.google.android.recaptcha:recaptcha:18.7.1`). If unused Firebase dependencies are removed, network egress will fail at runtime. | **P0 (Critical)** | Explicitly declare `<uses-permission android:name="android.permission.INTERNET" />` in `app/src/main/AndroidManifest.xml` so network place search does not rely on transient dependency inheritance. |
+| **COMP-F03** | **INTERNET Permission Direct Manifest Declaration** | `app/src/main/AndroidManifest.xml` explicitly declares `<uses-permission android:name="android.permission.INTERNET" />` for place search HTTPS queries. | **RESOLVED (TS-COMP-01)** | Directly declared in application manifest; does not rely on transient dependency inheritance. |
 | **COMP-F04** | **Crashlytics and Crash Reporting Absent** | Neither Firebase Crashlytics nor third-party crash reporting SDKs (Sentry, Bugsnag) are present in `gradle/libs.versions.toml`, `build.gradle.kts`, or application source code. | **P2 (Medium)** | Evaluate whether crash reporting is required for production operations. If required, implement privacy-preserving crash reporting; if omitted, note intentional privacy-first stance in operations documentation. |
 | **COMP-F05** | **R8 Code Shrinking / Obfuscation Disabled in Release** | In `app/build.gradle.kts:45`, `buildTypes.release` has `isMinifyEnabled = false`. | **P1 (High)** | Enable `isMinifyEnabled = true` and configure ProGuard rules in `proguard-rules.pro` before building Google Play production release AAB. |
 | **COMP-F06** | **Location-Search External Retention & Processing Unknown** | `ProxyLocationSearchDataSource.kt` transmits queries to `https://travel-stamp-api.prashantdasnur11.workers.dev/v1/places/search?q={query}`. Server-side logging, proxy IP retention, and upstream provider processing cannot be verified from client code. | **P1 (High)** | Perform external compliance verification on the Cloudflare Worker script and document worker retention policies and third-party upstream providers (e.g. OpenStreetMap / Nominatim / Mapbox). |
@@ -64,6 +64,7 @@ Physical examination of `app/src/main/AndroidManifest.xml` confirms the followin
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -73,10 +74,10 @@ Physical examination of `app/src/main/AndroidManifest.xml` confirms the followin
 
 | Permission | In Direct App Manifest? | Protection Level | Purpose in Travel Stamp Code |
 |---|---|---|---|
+| `android.permission.INTERNET` | **YES** | Normal (Install-time) | Enables place-search queries via Cloudflare Worker proxy (`travel-stamp-api.prashantdasnur11.workers.dev`). |
 | `android.permission.CAMERA` | **YES** | Dangerous (Runtime) | Enables in-app photo capture for travel moments using `ActivityResultContracts.TakePicture()`. |
 | `android.permission.POST_NOTIFICATIONS` | **YES** | Dangerous (Runtime, API 33+) | Delivers pre-trip preparation and packing notifications scheduled via WorkManager. |
 | `android.permission.RECEIVE_BOOT_COMPLETED` | **YES** | Normal (Install-time) | Required by AndroidX WorkManager internals (`SystemAlarmService`, `SystemJobService`) to reschedule pending reminder alarms across system reboots. No application-owned broadcast receiver exists for this action. |
-| `android.permission.INTERNET` | **NO (NOT DIRECTLY DECLARED)** | Normal (Install-time) | Inherited exclusively from merged library manifests. |
 
 ---
 
@@ -86,16 +87,16 @@ Verification executed via `gradle :app:processDebugMainManifest`, `gradle :app:p
 
 | Permission | Direct App Manifest | Merged Debug Manifest | Merged Release Manifest | Contributing Artifact(s) |
 |---|---|---|---|---|
+| `android.permission.INTERNET` | **YES** | **YES** | **YES** | App Manifest (`app/src/main/AndroidManifest.xml`) |
 | `android.permission.CAMERA` | **YES** | **YES** | **YES** | App Manifest |
 | `android.permission.POST_NOTIFICATIONS` | **YES** | **YES** | **YES** | App Manifest |
 | `android.permission.RECEIVE_BOOT_COMPLETED` | **YES** | **YES** | **YES** | App Manifest |
-| `android.permission.INTERNET` | **NO** | **YES** | **YES** | `com.google.firebase:firebase-ai:17.13.0`<br>`com.google.android.recaptcha:recaptcha:18.7.1` |
 | `android.permission.ACCESS_NETWORK_STATE` | **NO** | **YES** | **YES** | `androidx.work:work-runtime:2.10.0`<br>`com.google.firebase:firebase-ai:17.13.0` |
 | `android.permission.WAKE_LOCK` | **NO** | **YES** | **YES** | `androidx.work:work-runtime:2.10.0` |
 | `android.permission.FOREGROUND_SERVICE` | **NO** | **YES** | **YES** | `androidx.work:work-runtime:2.10.0` |
 | `com.google.android.providers.gsf.permission.READ_GSERVICES` | **NO** | **YES** | **YES** | `com.google.firebase:firebase-ai:17.13.0` |
 
-> **Critical Architecture Finding:** While `android.permission.INTERNET` is present in both merged debug and release manifests, it is **NOT** declared in the direct `app/src/main/AndroidManifest.xml`. It enters the build strictly via transient inheritance from `firebase-ai` and `recaptcha`. If these unused dependencies are removed, the app will lose `INTERNET` access unless explicitly added to `AndroidManifest.xml` (Logged as **COMP-F03**).
+> **Manifest Compliance Verification:** `android.permission.INTERNET` is explicitly declared in `app/src/main/AndroidManifest.xml`, ensuring network place search functions independently of any third-party AAR dependency manifest contributions. No location permissions (`ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`) or broad storage permissions (`READ_EXTERNAL_STORAGE`, `READ_MEDIA_IMAGES`) are requested.
 
 ---
 
@@ -162,10 +163,11 @@ android:fullBackupContent="@xml/backup_rules"
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
 </full-backup-content>
 ```
 
@@ -174,29 +176,29 @@ android:fullBackupContent="@xml/backup_rules"
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </device-transfer>
-    -->
 </data-extraction-rules>
 ```
 
 ### 4. Verified Backup Behavior:
-- **`android:allowBackup`:** Explicitly set to `true`.
-- **Cloud Backup Explicit Rules:** **NONE.** The `<cloud-backup>` tag is empty. All `<include>` and `<exclude>` tags are commented-out sample code.
-- **Device Transfer Explicit Rules:** **NONE.** The `<device-transfer>` tag is commented out completely.
-- **Legacy Full Backup Explicit Rules:** **NONE.** The `<full-backup-content>` tag is empty with commented-out examples.
-- **Implicit / Default OS Behavior:**
-  - On Android 12+ (API 31+), because `<data-extraction-rules>` has an empty `<cloud-backup>` block and no active `<include>` rules, Google Cloud Backup backs up nothing from cloud backup unless rules are defined, while device-to-device transfer behavior without `<device-transfer>` defaults to backing up all app data.
-  - On Android 11 and lower (API < 31), an empty `<full-backup-content>` file defaults to backing up **all** private app files (including Room database, moments photos, and SharedPreferences) to Google Drive Auto Backup.
-  - **Correction of Previous Claim:** `sharedpref/travel_stamp_prefs.xml` is **NOT** explicitly excluded in current source code. It is fully subject to OS-default backup behavior (Logged as **COMP-F01**).
+- **`android:allowBackup`:** Maintained as `true` in manifest while paired with strict exclusion rules.
+- **Cloud Backup Explicit Rules:** All storage domains (`root`, `file`, `database`, `sharedpref`, `external`) are explicitly excluded. Automatic OS cloud backup of Room database records, moment photos, notes, and preferences is completely disabled.
+- **Device Transfer Explicit Rules:** All storage domains (`root`, `file`, `database`, `sharedpref`, `external`) are explicitly excluded. Automatic device-to-device migration for V1 is disabled.
+- **Legacy Full Backup Explicit Rules (Android 11 and lower):** All storage domains (`root`, `file`, `database`, `sharedpref`, `external`) are explicitly excluded in `<full-backup-content>`.
+- **Supported User-Controlled Backup Mechanism:** The existing custom `.tsbackup` archive export and restore workflow (`BackupManager`) remains the sole supported backup/migration mechanism. Users retain full sovereign custody of their journal archives.
+- **Zero Privacy Egress:** No location (`ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`) or broad storage permissions (`READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `READ_MEDIA_IMAGES`) are introduced.
 
 ---
 
